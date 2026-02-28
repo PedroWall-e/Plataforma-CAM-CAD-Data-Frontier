@@ -1,0 +1,359 @@
+import React from 'react';
+import { 
+  Terminal, 
+  Box, 
+  Cpu, 
+  Code2, 
+  Layers, 
+  Wrench, 
+  CheckCircle2, 
+  Github,
+  PlayCircle,
+  Activity,
+  ArrowRight
+} from 'lucide-react';
+
+// Símbolo Original Data Frontier
+const DFLogo = ({ className }) => (
+  <svg viewBox="0 0 100 100" className={className} fill="none" stroke="currentColor" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M50 15 L85 75 L15 75 Z" />
+    <path d="M50 35 L70 70 L30 70 Z" />
+    <path d="M50 55 L60 67 L40 67 Z" />
+  </svg>
+);
+
+// Logo FabScript (Adaptado para Light Theme)
+const FabScriptLogo = ({ className }) => (
+  <svg viewBox="0 0 100 100" className={className} fill="none" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="20" y="20" width="60" height="60" rx="14" stroke="currentColor" strokeWidth="8" className="text-[#3347FF]" />
+    <path d="M35 65 L35 35 L65 35" stroke="currentColor" strokeWidth="8" className="text-[#B2624F]" />
+    <circle cx="65" cy="65" r="6" fill="currentColor" stroke="none" className="text-[#2B2B2B]" />
+  </svg>
+);
+
+const Navbar = () => (
+  <nav className="fixed w-full z-50 bg-white/95 backdrop-blur-md border-b border-gray-200 shadow-sm">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="flex items-center justify-between h-20">
+        <div className="flex items-center gap-4">
+          <FabScriptLogo className="w-10 h-10" />
+          <div className="flex flex-col justify-center">
+            <span className="text-xl font-bold text-[#2B2B2B] tracking-wide leading-tight">
+              FabScript
+            </span>
+            <div className="flex items-center gap-1.5 text-gray-500 mt-0.5">
+              <span className="text-[10px] uppercase tracking-wider font-light">by</span>
+              <DFLogo className="w-3.5 h-3.5 text-[#3347FF]" />
+              <span className="text-[10px] font-bold tracking-widest lowercase text-[#2B2B2B]">data frontier</span>
+            </div>
+          </div>
+        </div>
+        <div className="hidden md:block">
+          <div className="ml-10 flex items-center space-x-8">
+            <a href="#features" className="text-gray-600 hover:text-[#3347FF] transition-colors px-3 py-2 text-sm font-medium">Recursos</a>
+            <a href="#stack" className="text-gray-600 hover:text-[#3347FF] transition-colors px-3 py-2 text-sm font-medium">Tecnologia</a>
+            <a href="#roadmap" className="text-gray-600 hover:text-[#3347FF] transition-colors px-3 py-2 text-sm font-medium">Roadmap</a>
+            <button className="bg-[#3347FF] hover:bg-[#2838cc] text-white transition-all px-5 py-2.5 rounded-md text-sm font-bold flex items-center gap-2 shadow-[0_4px_14px_rgba(51,71,255,0.3)]">
+              <Terminal className="w-4 h-4" /> Aceder ao Editor
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </nav>
+);
+
+const Hero = () => (
+  <div className="relative pt-32 pb-20 sm:pt-40 sm:pb-24 overflow-hidden bg-white">
+    {/* Background Grid Pattern - Very Light Gray */}
+    <div className="absolute inset-0 opacity-40 bg-[linear-gradient(to_right,#e5e7eb_1px,transparent_1px),linear-gradient(to_bottom,#e5e7eb_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)]"></div>
+    
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+      <div className="text-center max-w-4xl mx-auto">
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#FFE3D6]/30 border border-[#FFE3D6] text-[#B2624F] text-sm font-medium mb-8">
+          <Activity className="w-4 h-4" /> v2.0 Data Frontier Engine
+        </div>
+        <h1 className="text-5xl sm:text-7xl font-extrabold text-[#2B2B2B] tracking-tight mb-8">
+          A revolução do <span className="text-[#3347FF]">CAD/CAM</span><br/>via código.
+        </h1>
+        <p className="text-xl text-gray-600 mb-10 leading-relaxed max-w-3xl mx-auto">
+          Projetos completos que integram uma metodologia do começo ao fim. 
+          Modele as suas peças programando subtrações de material e gere <strong className="text-[#3347FF]">G-Code automaticamente</strong> no navegador.
+        </p>
+        <div className="flex flex-col sm:flex-row justify-center gap-4">
+          <button className="bg-[#3347FF] hover:bg-[#2838cc] text-white px-8 py-4 rounded-lg font-bold text-lg flex items-center justify-center gap-2 transition-all transform hover:scale-105 shadow-[0_8px_25px_rgba(51,71,255,0.4)]">
+            <PlayCircle className="w-5 h-5" /> Começar a Codar
+          </button>
+          <button className="bg-white hover:bg-gray-50 text-[#2B2B2B] px-8 py-4 rounded-lg font-bold text-lg flex items-center justify-center gap-2 transition-all border border-gray-300 shadow-sm">
+            <Github className="w-5 h-5" /> Ver no GitHub
+          </button>
+        </div>
+      </div>
+
+      {/* Editor Mockup (Light Theme) */}
+      <div className="mt-20 rounded-xl overflow-hidden border border-gray-200 bg-white shadow-[0_20px_50px_-12px_rgba(0,0,0,0.1)] flex flex-col md:flex-row">
+        {/* Code side - Light IDE */}
+        <div className="w-full md:w-1/2 border-b md:border-b-0 md:border-r border-gray-200 p-6 font-mono text-sm leading-relaxed bg-[#fafafa]">
+          <div className="flex gap-2 mb-6 border-b border-gray-200 pb-4">
+            <div className="w-3 h-3 rounded-full bg-[#B2624F]"></div>
+            <div className="w-3 h-3 rounded-full bg-[#FFE3D6] border border-gray-300"></div>
+            <div className="w-3 h-3 rounded-full bg-[#3347FF]"></div>
+          </div>
+          <pre className="text-[#2B2B2B] overflow-x-auto">
+            <code>
+              <span className="text-[#B2624F] font-semibold">import</span> {'{ Stock, EndMill, Path2D }'} <span className="text-[#B2624F] font-semibold">from</span> <span className="text-[#15803d]">'@fabscript/core'</span>;<br/><br/>
+              <span className="text-gray-400 italic">// 1. Definir material bruto e ferramenta</span><br/>
+              <span className="text-[#3347FF] font-semibold">const</span> block = <span className="text-[#3347FF] font-semibold">new</span> <span className="text-[#0369a1]">Stock</span>({'{ width: 100, length: 100, height: 20 }'});<br/>
+              <span className="text-[#3347FF] font-semibold">const</span> tool = <span className="text-[#3347FF] font-semibold">new</span> <span className="text-[#0369a1]">EndMill</span>({'{ diameter: 6 }'});<br/><br/>
+              <span className="text-gray-400 italic">// 2. Desenhar contorno</span><br/>
+              <span className="text-[#3347FF] font-semibold">const</span> square = <span className="text-[#3347FF] font-semibold">new</span> <span className="text-[#0369a1]">Path2D</span>().<span className="text-[#B2624F]">rect</span>(10, 10, 80, 80);<br/><br/>
+              <span className="text-gray-400 italic">// 3. Operação de Usinagem (Feature-based)</span><br/>
+              block.<span className="text-[#B2624F]">pocket</span>(square, {'{ depth: 5, tool }'});<br/>
+              block.<span className="text-[#B2624F]">drill</span>([{'{x:20, y:20}'}], {'{ depth: 10, tool }'});<br/><br/>
+              <span className="text-[#B2624F] font-semibold">export default</span> block;
+            </code>
+          </pre>
+        </div>
+        {/* 3D Preview side - Light Theme */}
+        <div className="w-full md:w-1/2 bg-[#F9FAFB] p-4 relative min-h-[350px] flex items-center justify-center overflow-hidden">
+          <div className="absolute top-4 right-4 bg-white text-xs px-3 py-1.5 rounded text-gray-600 flex items-center gap-2 border border-gray-200 shadow-sm">
+            <span className="w-2 h-2 rounded-full bg-[#3347FF] animate-pulse"></span> Preview 3D
+          </div>
+          
+          {/* Abstract representation of 3D block */}
+          <div className="absolute inset-0 opacity-[0.15] bg-[linear-gradient(to_right,#3347FF_1px,transparent_1px),linear-gradient(to_bottom,#3347FF_1px,transparent_1px)] bg-[size:2rem_2rem] [transform:rotateX(60deg)_scale(2)] origin-bottom"></div>
+          
+          <div className="relative w-56 h-56 transform rotate-x-60 rotate-z-45 transition-transform duration-1000">
+            {/* Bloco Claro */}
+            <div className="absolute inset-0 bg-white/90 border-2 border-gray-300 shadow-xl flex items-center justify-center">
+              {/* Cavidade */}
+              <div className="absolute inset-6 border-2 border-gray-200 bg-gray-50 shadow-inner"></div>
+              {/* Trajetória Snorkel Blue */}
+              <div className="absolute inset-4 border-[3px] border-[#3347FF] opacity-90 shadow-[0_0_10px_rgba(51,71,255,0.2)]" style={{ transform: 'translateZ(20px)' }}></div>
+              {/* Fresa */}
+              <div className="absolute top-4 left-4 w-4 h-4 rounded-full bg-white border-[3px] border-[#B2624F] shadow-lg" style={{ transform: 'translate(-50%, -50%) translateZ(20px)' }}></div>
+            </div>
+            {/* Altura 3D - Laterais claras */}
+            <div className="absolute top-full left-0 w-full h-6 bg-gray-200 origin-top transform rotate-x-90 skew-x-45 border-b border-l border-gray-300"></div>
+            <div className="absolute top-0 left-full w-6 h-full bg-gray-300 origin-left transform -rotate-y-90 skew-y-45 border-t border-r border-gray-400"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+const Features = () => {
+  const features = [
+    {
+      icon: <Layers className="w-6 h-6 text-[#3347FF]" />,
+      title: "Usinagem Baseada em Operações",
+      desc: "Não desenha polígonos genéricos. Programa subtrações de material usando ferramentas reais (ex: 'faça uma cavidade com fresa de 6mm')."
+    },
+    {
+      icon: <CheckCircle2 className="w-6 h-6 text-[#2B2B2B]" />,
+      title: "100% Fabricável",
+      desc: "Como a peça é modelada pelas restrições geométricas das ferramentas de corte, o modelo 3D resultante no ecrã é garantidamente usinável na vida real."
+    },
+    {
+      icon: <Cpu className="w-6 h-6 text-[#B2624F]" />,
+      title: "G-Code Instantâneo",
+      desc: "Elimine a etapa complexa do CAM tradicional. A trajetória da ferramenta já é calculada no momento da modelagem, gerando código CNC de imediato."
+    }
+  ];
+
+  return (
+    <div id="features" className="py-24 bg-[#F9FAFB] border-t border-gray-200">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="text-center mb-16">
+          <h2 className="text-3xl font-bold text-[#2B2B2B] mb-4">Porquê construir com FabScript?</h2>
+          <p className="text-gray-600 max-w-2xl mx-auto text-lg">O elo perdido entre o design programático e a fabricação de precisão.</p>
+        </div>
+        <div className="grid md:grid-cols-3 gap-8">
+          {features.map((f, i) => (
+            <div key={i} className="bg-white border border-gray-200 p-8 rounded-2xl hover:border-[#3347FF]/50 hover:shadow-lg transition-all group">
+              <div className="bg-[#F3F4F6] w-14 h-14 rounded-xl flex items-center justify-center mb-6 group-hover:bg-[#3347FF]/10 transition-colors">
+                {f.icon}
+              </div>
+              <h3 className="text-xl font-bold text-[#2B2B2B] mb-3">{f.title}</h3>
+              <p className="text-gray-600 leading-relaxed">{f.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const Stack = () => (
+  <div id="stack" className="py-24 bg-white">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="flex flex-col md:flex-row items-center gap-16">
+        <div className="w-full md:w-1/2">
+          <h2 className="text-3xl font-bold text-[#2B2B2B] mb-6">Stack Tecnológica Robusta</h2>
+          <p className="text-gray-600 mb-8 leading-relaxed text-lg">
+            Construído para alta performance no navegador, permitindo execuções matemáticas complexas sem bloquear a interface do utilizador.
+          </p>
+          <div className="space-y-6">
+            {[
+              { tech: "TypeScript", desc: "Tipagem forte para o motor geométrico.", color: "text-[#3347FF]", bg: "bg-[#3347FF]/10" },
+              { tech: "React / Vite", desc: "UI reativa e build ultra-rápido offline-first.", color: "text-[#B2624F]", bg: "bg-[#B2624F]/10" },
+              { tech: "Monaco Editor", desc: "O motor do VSCode para auto-complete no browser.", color: "text-[#2B2B2B]", bg: "bg-gray-100" },
+              { tech: "Three.js", desc: "Renderização WebGL leve e rápida de material e rotas.", color: "text-[#3347FF]", bg: "bg-[#3347FF]/10" },
+            ].map((item, i) => (
+              <div key={i} className="flex items-start gap-4">
+                <div className={`p-2 rounded-lg ${item.bg}`}>
+                  <Code2 className={`w-6 h-6 ${item.color}`} />
+                </div>
+                <div>
+                  <strong className="text-[#2B2B2B] text-lg">{item.tech}</strong>
+                  <span className="text-gray-600 block mt-1">{item.desc}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="w-full md:w-1/2">
+          <div className="grid grid-cols-2 gap-4 relative">
+            {/* Decoração de fundo (Light) */}
+            <div className="absolute inset-1/2 -translate-x-1/2 -translate-y-1/2 w-3/4 h-3/4 bg-[#FFE3D6]/60 blur-[60px] rounded-full"></div>
+            
+            <div className="bg-white border border-gray-200 p-8 rounded-xl flex flex-col items-center justify-center gap-3 aspect-square shadow-sm hover:shadow-md transition-shadow z-10">
+              <Terminal className="w-12 h-12 text-[#3347FF]" />
+              <span className="text-[#2B2B2B] font-bold">Monaco</span>
+            </div>
+            <div className="bg-white border border-gray-200 p-8 rounded-xl flex flex-col items-center justify-center gap-3 aspect-square shadow-sm hover:shadow-md transition-shadow mt-12 z-10">
+              <Box className="w-12 h-12 text-[#B2624F]" />
+              <span className="text-[#2B2B2B] font-bold">Three.js</span>
+            </div>
+            <div className="bg-white border border-gray-200 p-8 rounded-xl flex flex-col items-center justify-center gap-3 aspect-square shadow-sm hover:shadow-md transition-shadow -mt-12 z-10">
+              <Cpu className="w-12 h-12 text-[#2B2B2B]" />
+              <span className="text-[#2B2B2B] font-bold">Web Workers</span>
+            </div>
+            <div className="bg-white border border-gray-200 p-8 rounded-xl flex flex-col items-center justify-center gap-3 aspect-square shadow-sm hover:shadow-md transition-shadow z-10">
+              <Layers className="w-12 h-12 text-[#3347FF]" />
+              <span className="text-[#2B2B2B] font-bold">React + Vite</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+const Roadmap = () => {
+  const phases = [
+    {
+      title: "Fase 1: Fundação CAD & Interface",
+      desc: "Criação da interface Split-screen (Monaco + Three.js). API Path2D básica e renderização em tempo real de polígonos 2D. O 'Motor de Código' inicial.",
+      status: "current"
+    },
+    {
+      title: "Fase 2: Contexto de Máquina",
+      desc: "Introdução do Stock (Material Bruto) e Tools (Ferramentas). O CAD deixa de viver no vácuo e passa a ter restrições físicas renderizadas.",
+      status: "upcoming"
+    },
+    {
+      title: "Fase 3: Motor de CAM Base",
+      desc: "Implementação matemática em Web Workers: Tool Compensation (Offset) e Motor Booleano 2D para calcular caminhos exatos.",
+      status: "upcoming"
+    },
+    {
+      title: "Fase 4: Usinagem Feature-Based",
+      desc: "A 'Fase de Ouro' (Usinagem 2.5D). Integração dos comandos pocket(), profile() e drill(). O motor passa a renderizar buracos e cortes no 3D.",
+      status: "upcoming"
+    },
+    {
+      title: "Fase 5: Exportação G-Code & Serial",
+      desc: "Pós-processador para converter trajetórias em G-code industrial. Integração com Web Serial API para controlo direto da máquina.",
+      status: "upcoming"
+    }
+  ];
+
+  return (
+    <div id="roadmap" className="py-24 bg-[#F9FAFB] border-t border-gray-200">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="text-center mb-16">
+          <h2 className="text-3xl font-bold text-[#2B2B2B] mb-4">Cronograma de Desenvolvimento</h2>
+          <p className="text-gray-600">Roadmap incremental onde cada fase cria a base matemática para a próxima.</p>
+        </div>
+        
+        <div className="space-y-8 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-1 before:bg-gray-200">
+          {phases.map((phase, i) => (
+            <div key={i} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
+              <div className={`flex items-center justify-center w-12 h-12 rounded-full border-4 border-[#F9FAFB] ${phase.status === 'current' ? 'bg-[#3347FF] shadow-[0_4px_10px_rgba(51,71,255,0.3)]' : 'bg-white border border-gray-300'} text-white shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10`}>
+                {phase.status === 'current' ? <Wrench className="w-5 h-5 text-white" /> : <div className="w-3 h-3 rounded-full bg-gray-300"></div>}
+              </div>
+              <div className="w-[calc(100%-4rem)] md:w-[calc(50%-3rem)] bg-white border border-gray-200 p-6 rounded-xl shadow-sm hover:shadow-md hover:border-[#3347FF]/50 transition-all">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className={`text-xs font-bold px-3 py-1 rounded-full ${phase.status === 'current' ? 'bg-[#3347FF]/10 text-[#3347FF]' : 'bg-gray-100 text-gray-500'}`}>
+                    {phase.status === 'current' ? 'Em Desenvolvimento' : 'Planeado'}
+                  </span>
+                </div>
+                <h3 className="text-xl font-bold text-[#2B2B2B] mb-2">{phase.title}</h3>
+                <p className="text-gray-600 text-sm leading-relaxed">{phase.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const CTA = () => (
+  <div className="py-24 bg-white border-t border-gray-200 relative overflow-hidden">
+    {/* Decorações do CTA (Claras) */}
+    <div className="absolute top-0 right-0 w-64 h-64 bg-[#FFE3D6]/50 blur-[100px] rounded-full"></div>
+    <div className="absolute bottom-0 left-0 w-64 h-64 bg-[#3347FF]/10 blur-[100px] rounded-full"></div>
+    
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center relative z-10">
+      <h2 className="text-3xl sm:text-4xl font-bold text-[#2B2B2B] mb-6">Pronto para escrever a sua primeira peça?</h2>
+      <p className="text-xl text-gray-600 mb-10">
+        Junte-se a nós. <span className="text-[#3347FF] font-semibold">Nossa força trabalhando para você.</span>
+      </p>
+      <div className="flex flex-col sm:flex-row justify-center gap-4">
+        <button className="bg-[#3347FF] hover:bg-[#2838cc] text-white px-8 py-4 rounded-lg font-bold text-lg flex items-center justify-center gap-2 transition-all shadow-[0_8px_25px_rgba(51,71,255,0.4)] hover:-translate-y-1">
+          <Terminal className="w-5 h-5" /> Abrir Web Editor
+        </button>
+      </div>
+    </div>
+  </div>
+);
+
+const Footer = () => (
+  <footer className="bg-white border-t border-gray-200 py-12">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-6">
+      <div className="flex items-center gap-3">
+        <DFLogo className="w-6 h-6 text-[#3347FF]" />
+        <span className="text-lg font-bold text-[#2B2B2B] tracking-wide">
+          <span className="font-light text-gray-500">data</span> frontier
+        </span>
+      </div>
+      <p className="text-gray-500 text-sm">
+        © {new Date().getFullYear()} Data Frontier. Tecnologia única como você.
+      </p>
+      <div className="flex gap-4">
+        <a href="#" className="text-gray-400 hover:text-[#3347FF] transition-colors">
+          <Github className="w-6 h-6" />
+        </a>
+      </div>
+    </div>
+  </footer>
+);
+
+export default function App() {
+  return (
+    <div className="min-h-screen bg-white font-sans text-gray-800 selection:bg-[#FFE3D6] selection:text-[#2B2B2B]">
+      <Navbar />
+      <main>
+        <Hero />
+        <Features />
+        <Stack />
+        <Roadmap />
+        <CTA />
+      </main>
+      <Footer />
+    </div>
+  );
+}
