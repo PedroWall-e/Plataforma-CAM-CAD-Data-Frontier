@@ -73,15 +73,17 @@ export function computeBoolean(
 
 /**
  * Computes a 3D B-Rep solid model from a list of machining operations.
- * Uses OpenCASCADE.js WASM in the worker for real solid boolean subtraction.
- * Returns tessellated mesh data as typed arrays (transferable objects).
+ * Uses a standalone classic Web Worker at /public/occt-worker.js which
+ * loads OpenCASCADE via importScripts — bypassing Vite's Rollup bundler.
  */
 export function computeSolidModel(
     stock: { width: number; height: number; depth: number },
     operations: MachiningOperation[]
 ): Promise<SolidModelResponse> {
     return new Promise((resolve, reject) => {
-        const worker = new CamWorker();
+        // Use an ES module worker served from /public — Vite does NOT bundle
+        // files inside /public. The worker uses static import to load OCC.
+        const worker = new Worker('/occt-worker.js', { type: 'module' });
 
         // Convert MachiningOperation[] to the simpler SolidOp[] the worker needs
         const ops: SolidOp[] = operations
@@ -91,6 +93,7 @@ export function computeSolidModel(
                         type: 'pocket',
                         points: op.path.points.map(p => ({ x: p.x, y: p.y })),
                         depth: op.depth,
+                        tool: { name: op.tool.name }
                     };
                 } else if (op.type === 'drill') {
                     return {
@@ -98,18 +101,25 @@ export function computeSolidModel(
                         points: op.points,
                         depth: op.depth,
                         radius: op.tool.diameter / 2,
+                        tool: { name: op.tool.name }
                     };
                 }
                 return null;
             })
             .filter((op): op is SolidOp => op !== null);
 
-        worker.onmessage = (e: MessageEvent<SolidModelResponse>) => {
-            worker.terminate();
-            if (e.data.error) {
-                reject(new Error(e.data.error));
+        worker.onmessage = (e: MessageEvent<any>) => {
+            // Emscripten or other internal tools sometimes broadcast messages on the worker.
+            // Only process messages that are actually our expected SolidModelResponse.
+            if (e.data && (e.data.vertices || e.data.error)) {
+                worker.terminate();
+                if (e.data.error) {
+                    reject(new Error(e.data.error));
+                } else {
+                    resolve(e.data as SolidModelResponse);
+                }
             } else {
-                resolve(e.data);
+                console.log('[CAM] Ignored unrecognized worker message:', e.data);
             }
         };
 
@@ -121,3 +131,4 @@ export function computeSolidModel(
         worker.postMessage({ type: 'SOLID_MODEL', stock, ops });
     });
 }
+

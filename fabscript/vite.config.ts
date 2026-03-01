@@ -8,8 +8,19 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  optimizeDeps: {
+    exclude: ['opencascade.js']
+  },
+  build: {
+    rollupOptions: {
+      // Keep opencascade.js out of the Rollup bundle entirely.
+      // The worker loads it at runtime via a CDN/public path import.
+      external: ['opencascade.js'],
+    }
+  },
   server: {
     port: 3060,
     strictPort: false,
   }
 })
+
