@@ -10,9 +10,10 @@ interface Viewer3DProps {
     stock: Stock | null;
     offsetPaths?: THREE.Vector3[][];
     operations?: MachiningOperation[];
+    solidMesh?: THREE.BufferGeometry | null;
 }
 
-const Viewer3D: React.FC<Viewer3DProps> = ({ geometries, stock, offsetPaths = [], operations = [] }) => {
+const Viewer3D: React.FC<Viewer3DProps> = ({ geometries, stock, offsetPaths = [], operations = [], solidMesh }) => {
     return (
         <Canvas
             camera={{ position: [0, -40, 40], up: [0, 0, 1] }}
@@ -41,81 +42,96 @@ const Viewer3D: React.FC<Viewer3DProps> = ({ geometries, stock, offsetPaths = []
                 fadeStrength={1}
             />
 
-            {/* Render Stock */}
-            {stock && (
-                <mesh position={[stock.width / 2, stock.height / 2, -stock.depth / 2]}>
-                    <boxGeometry args={[stock.width, stock.height, stock.depth]} />
+            {/* Conditionally render true B-Rep solid OR the preview stock+operations */}
+            {solidMesh ? (
+                <mesh geometry={solidMesh}>
                     <meshStandardMaterial
-                        color="#2a3f54"
+                        color="#9CA3AF"
+                        metalness={0.6}
+                        roughness={0.4}
                         transparent={true}
-                        opacity={0.3}
-                        depthWrite={false}
+                        opacity={0.9}
                         side={THREE.DoubleSide}
                     />
-                    <lineSegments>
-                        <edgesGeometry args={[new THREE.BoxGeometry(stock.width, stock.height, stock.depth)]} />
-                        <lineBasicMaterial color="#4fc3f7" transparent opacity={0.5} />
-                    </lineSegments>
                 </mesh>
-            )}
-
-            {/* Render user geometry paths (cyan) */}
-            {geometries.map((pts, idx) => {
-                if (pts.length < 2) return null;
-                const geometry = new THREE.BufferGeometry().setFromPoints(pts);
-                const material = new THREE.LineBasicMaterial({ color: '#00ffcc', linewidth: 2 });
-                return <primitive key={`geo-${idx}`} object={new THREE.Line(geometry, material)} />;
-            })}
-
-            {/* Render tool-compensated offset paths (orange) */}
-            {offsetPaths.map((pts, idx) => {
-                if (pts.length < 2) return null;
-                const geometry = new THREE.BufferGeometry().setFromPoints(pts);
-                const material = new THREE.LineBasicMaterial({ color: '#FF6B2B', linewidth: 1.5 });
-                return <primitive key={`offset-${idx}`} object={new THREE.Line(geometry, material)} />;
-            })}
-
-            {/* Render 3D Machining Operations */}
-            {operations.map((op, idx) => {
-                if (op.type === 'pocket' && op.path.points.length > 2) {
-                    // Create an extruded shape for the pocket (visualized as a red solid volume representing removed material)
-                    const shape = new THREE.Shape(op.path.points.map(p => new THREE.Vector2(p.x, p.y)));
-                    const extrudeSettings = { depth: op.depth, bevelEnabled: false };
-                    return (
-                        <mesh key={`op-${idx}`} position={[0, 0, -op.depth]}>
-                            <extrudeGeometry args={[shape, extrudeSettings]} />
-                            <meshStandardMaterial color="#ef4444" transparent opacity={0.6} side={THREE.DoubleSide} />
+            ) : (
+                <>
+                    {/* Render Stock */}
+                    {stock && (
+                        <mesh position={[stock.width / 2, stock.height / 2, -stock.depth / 2]}>
+                            <boxGeometry args={[stock.width, stock.height, stock.depth]} />
+                            <meshStandardMaterial
+                                color="#2a3f54"
+                                transparent={true}
+                                opacity={0.3}
+                                depthWrite={false}
+                                side={THREE.DoubleSide}
+                            />
+                            <lineSegments>
+                                <edgesGeometry args={[new THREE.BoxGeometry(stock.width, stock.height, stock.depth)]} />
+                                <lineBasicMaterial color="#4fc3f7" transparent opacity={0.5} />
+                            </lineSegments>
                         </mesh>
-                    );
-                }
+                    )}
 
-                if (op.type === 'drill') {
-                    // Visualize drills as small red cylinders
-                    return (
-                        <group key={`op-${idx}`}>
-                            {op.points.map((pt, pIdx) => (
-                                <mesh key={`drill-${pIdx}`} position={[pt.x, pt.y, -op.depth / 2]} rotation={[Math.PI / 2, 0, 0]}>
-                                    <cylinderGeometry args={[op.tool.diameter / 2, op.tool.diameter / 2, op.depth, 16]} />
-                                    <meshStandardMaterial color="#b91c1c" transparent opacity={0.8} />
+                    {/* Render user geometry paths (cyan) */}
+                    {geometries.map((pts, idx) => {
+                        if (pts.length < 2) return null;
+                        const geometry = new THREE.BufferGeometry().setFromPoints(pts);
+                        const material = new THREE.LineBasicMaterial({ color: '#00ffcc', linewidth: 2 });
+                        return <primitive key={`geo-${idx}`} object={new THREE.Line(geometry, material)} />;
+                    })}
+
+                    {/* Render tool-compensated offset paths (orange) */}
+                    {offsetPaths.map((pts, idx) => {
+                        if (pts.length < 2) return null;
+                        const geometry = new THREE.BufferGeometry().setFromPoints(pts);
+                        const material = new THREE.LineBasicMaterial({ color: '#FF6B2B', linewidth: 1.5 });
+                        return <primitive key={`offset-${idx}`} object={new THREE.Line(geometry, material)} />;
+                    })}
+
+                    {/* Render 3D Machining Operations */}
+                    {operations.map((op, idx) => {
+                        if (op.type === 'pocket' && op.path.points.length > 2) {
+                            // Create an extruded shape for the pocket (visualized as a red solid volume representing removed material)
+                            const shape = new THREE.Shape(op.path.points.map(p => new THREE.Vector2(p.x, p.y)));
+                            const extrudeSettings = { depth: op.depth, bevelEnabled: false };
+                            return (
+                                <mesh key={`op-${idx}`} position={[0, 0, -op.depth]}>
+                                    <extrudeGeometry args={[shape, extrudeSettings]} />
+                                    <meshStandardMaterial color="#ef4444" transparent opacity={0.6} side={THREE.DoubleSide} />
                                 </mesh>
-                            ))}
-                        </group>
-                    );
-                }
+                            );
+                        }
 
-                if (op.type === 'profile' && op.path.points.length > 1) {
-                    // Just visualize profile as a thick red line bounding box for now
-                    const geometry = new THREE.BufferGeometry().setFromPoints(op.path.points);
-                    const material = new THREE.LineBasicMaterial({ color: '#ef4444', linewidth: 3 });
-                    return <primitive key={`op-${idx}`} object={new THREE.Line(geometry, material)} position={[0, 0, -op.depth]} />;
-                }
+                        if (op.type === 'drill') {
+                            // Visualize drills as small red cylinders
+                            return (
+                                <group key={`op-${idx}`}>
+                                    {op.points.map((pt, pIdx) => (
+                                        <mesh key={`drill-${pIdx}`} position={[pt.x, pt.y, -op.depth / 2]} rotation={[Math.PI / 2, 0, 0]}>
+                                            <cylinderGeometry args={[op.tool.diameter / 2, op.tool.diameter / 2, op.depth, 16]} />
+                                            <meshStandardMaterial color="#b91c1c" transparent opacity={0.8} />
+                                        </mesh>
+                                    ))}
+                                </group>
+                            );
+                        }
 
-                return null;
-            })}
+                        if (op.type === 'profile' && op.path.points.length > 1) {
+                            // Just visualize profile as a thick red line bounding box for now
+                            const geometry = new THREE.BufferGeometry().setFromPoints(op.path.points);
+                            const material = new THREE.LineBasicMaterial({ color: '#ef4444', linewidth: 3 });
+                            return <primitive key={`op-${idx}`} object={new THREE.Line(geometry, material)} position={[0, 0, -op.depth]} />;
+                        }
+
+                        return null;
+                    })}
+                </>
+            )}
 
             <OrbitControls makeDefault />
         </Canvas>
     );
 };
-
 export default Viewer3D;

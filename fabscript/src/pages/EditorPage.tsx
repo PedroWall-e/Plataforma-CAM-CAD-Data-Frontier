@@ -19,12 +19,14 @@ import {
     Terminal,
     ArrowLeft
 } from 'lucide-react';
-import CodeEditor from '../components/CodeEditor';
+import CodeEditor, { type EditorError } from '../components/CodeEditor';
 import Viewer3D from '../components/Viewer3D';
 import MachineContextPanel from '../components/MachineContextPanel';
 import { compileCode, type CompileResult } from '../engine/compiler';
-import { computeOffset } from '../engine/cam';
+import { computeOffset, computeSolidModel } from '../engine/cam';
 import { generateGCode } from '../engine/gcode';
+import * as THREE from 'three';
+import { occtMeshToGeometry } from '../engine/occt-bridge';
 
 // Símbolo Original Data Frontier
 const DFLogo = ({ className }: { className?: string }) => (
@@ -108,7 +110,8 @@ export default function EditorPage() {
     const [compileResult, setCompileResult] = useState<CompileResult>({
         stock: null, tools: [], paths: [], offsetPaths: [], operations: [], camStatus: 'idle'
     });
-    const [error, setError] = useState<string | null>(null);
+    const [solidMesh, setSolidMesh] = useState<THREE.BufferGeometry | null>(null);
+    const [error, setError] = useState<EditorError | null>(null);
     const [activeTab, setActiveTab] = useState<'terminal' | 'problems'>('terminal');
     const [logs, setLogs] = useState<string[]>([
         '> FabScript Engine (Powered by Data Frontier)',
@@ -125,7 +128,11 @@ export default function EditorPage() {
                 setError(null);
                 setLogs((prev: string[]) => [...prev, `> Compilando geometria... Sucesso`, `> ${result.paths.length} caminho(s) gerado(s).`]);
             } catch (err: any) {
-                setError(err.message);
+                // Extract line number from the error stack when available
+                let line: number | undefined;
+                const stackMatch = String(err.stack).match(/<anonymous>:(\d+):\d+/);
+                if (stackMatch) line = parseInt(stackMatch[1], 10);
+                setError({ message: err.message, line });
                 setLogs((prev: string[]) => [...prev, `> [ERRO]: ${err.message}`]);
             }
         }, 600);
@@ -150,6 +157,30 @@ export default function EditorPage() {
                 setLogs((prev: string[]) => [...prev, `> CAM [ERRO]: ${err.message}`]);
             });
     }, [compileResult.paths, compileResult.tools]);
+
+    // Step 3: Run B-Rep solid computation via OpenCASCADE
+    useEffect(() => {
+        if (!compileResult.stock || compileResult.operations.length === 0) {
+            setSolidMesh(null);
+            return;
+        }
+
+        setLogs((prev: string[]) => [...prev, `> B-Rep: Construindo sólido OpenCASCADE...`]);
+        setCompileResult((prev: CompileResult) => ({ ...prev, camStatus: 'computing' }));
+
+        computeSolidModel(compileResult.stock, compileResult.operations)
+            .then(meshData => {
+                const geometry = occtMeshToGeometry(meshData);
+                setSolidMesh(geometry);
+                setCompileResult((prev: CompileResult) => ({ ...prev, camStatus: 'done' }));
+                setLogs((prev: string[]) => [...prev, `> B-Rep: Sólido carregado com sucesso.`]);
+            })
+            .catch((err: Error) => {
+                setCompileResult((prev: CompileResult) => ({ ...prev, camStatus: 'error' }));
+                setLogs((prev: string[]) => [...prev, `> B-Rep [ERRO]: ${err.message}`]);
+                setSolidMesh(null);
+            });
+    }, [compileResult.stock, compileResult.operations]);
 
     // Handle G-Code generation and download
     const handleDownloadGCode = () => {
@@ -201,7 +232,7 @@ export default function EditorPage() {
                         <span className="hover:text-white cursor-pointer transition-colors">Projetos</span>
                         <span>/</span>
                         <span className="text-[#FFE3D6] font-medium">Suporte_Motor_v2.fabscript</span>
-                        {error && <span className="w-2 h-2 rounded-full bg-[#B2624F] ml-2 shadow-[0_0_5px_#B2624F]" title="Erro de compilação" />}
+                        {error && <span className="w-2 h-2 rounded-full bg-[#B2624F] ml-2 shadow-[0_0_5px_#B2624F]" title={error.message} />}
                     </div>
                 </div>
 
@@ -306,7 +337,7 @@ export default function EditorPage() {
 
                     {/* Monaco Editor */}
                     <div className="flex-1 overflow-hidden">
-                        <CodeEditor value={code} onChange={setCode} />
+                        <CodeEditor value={code} onChange={setCode} error={error} />
                     </div>
 
                     {/* Machine Context Panel */}
@@ -337,7 +368,7 @@ export default function EditorPage() {
                                 ))
                             ) : (
                                 error
-                                    ? <div className="text-red-400"><span className="font-bold">● Erro:</span> {error}</div>
+                                    ? <div className="text-red-400"><span className="font-bold">● Erro{error.line ? ` (linha ${error.line})` : ''}:</span> {error.message}</div>
                                     : <div className="text-green-400">Sem problemas detectados.</div>
                             )}
                         </div>
@@ -368,6 +399,7 @@ export default function EditorPage() {
                             stock={compileResult.stock}
                             offsetPaths={compileResult.offsetPaths}
                             operations={compileResult.operations}
+                            solidMesh={solidMesh}
                         />
                     </div>
 
@@ -384,10 +416,10 @@ export default function EditorPage() {
                             {compileResult.stock ? `${compileResult.stock.width} × ${compileResult.stock.height} × ${compileResult.stock.depth}mm` : 'Sem stock'}
                         </div>
                         {compileResult.camStatus === 'computing' && (
-                            <div className="text-xs text-[#FF6B2B] animate-pulse font-mono">CAM ⚙ calculando...</div>
+                            <div className="text-xs text-[#FF6B2B] animate-pulse font-mono">CAM / B-Rep ⚙ calculando...</div>
                         )}
                         {compileResult.camStatus === 'done' && (
-                            <div className="text-xs text-green-400 font-mono">✓ CAM offset pronto</div>
+                            <div className="text-xs text-green-400 font-mono">✓ CAM & B-Rep prontos</div>
                         )}
                     </div>
                 </div>
