@@ -160,51 +160,38 @@ export default function EditorPage() {
 
     // Step 3: Run B-Rep solid computation via OpenCASCADE
     useEffect(() => {
+        // 1. Só executa se houver stock e operações
         if (!compileResult.stock || compileResult.operations.length === 0) {
             setSolidMesh(null);
             return;
         }
 
-        // Criamos um sinalizador para ignorar o resultado se o efeito for cancelado
         let isCancelled = false;
+        setLogs((prev) => [...prev, `> B-Rep: Iniciando motor OpenCASCADE...`]);
+        setCompileResult((prev) => ({ ...prev, camStatus: 'computing' }));
 
-        setLogs((prev: string[]) => [...prev, `> B-Rep: Construindo sólido OpenCASCADE...`]);
-        setCompileResult((prev: CompileResult) => ({ ...prev, camStatus: 'computing' }));
-
-        // Criamos um controlador para poder cancelar o worker se o código mudar
-        const worker = new Worker('/occt-worker.js', { type: 'module' });
-        
-        // Função para processar a resposta do worker
-        const handleMessage = (event: MessageEvent) => {
-            if (isCancelled) return; // Ignora se o utilizador já digitou algo novo
-            
-            const { vertices, normals, indices, error } = event.data;
-            if (error) {
-                setCompileResult((prev: CompileResult) => ({ ...prev, camStatus: 'error' }));
-                setLogs((prev: string[]) => [...prev, `> B-Rep [ERRO]: ${error}`]);
-                setSolidMesh(null);
-            } else {
-                const meshData = { vertices: new Float32Array(vertices), normals: new Float32Array(normals), indices: new Uint32Array(indices) };
+        // 2. [CORREÇÃO VITAL] Utilize a função computeSolidModel do cam.ts
+        // Ela trata a conversão de Tool -> Radius e Path2D -> Points
+        computeSolidModel(compileResult.stock, compileResult.operations)
+            .then(meshData => {
+                if (isCancelled) return;
+                
+                // 3. Converte a malha recebida do Worker para geometria do Three.js
                 const geometry = occtMeshToGeometry(meshData);
                 setSolidMesh(geometry);
-                setCompileResult((prev: CompileResult) => ({ ...prev, camStatus: 'done' }));
-                setLogs((prev: string[]) => [...prev, `> B-Rep: Sólido carregado com sucesso.`]);
-            }
-        };
-        
-        worker.onmessage = handleMessage;
-        
-        // Envia dados para o worker
-        worker.postMessage({
-            type: 'SOLID_MODEL',
-            stock: compileResult.stock,
-            ops: compileResult.operations
-        });
+                setCompileResult((prev) => ({ ...prev, camStatus: 'done' }));
+                setLogs((prev) => [...prev, `> B-Rep: Sólido gerado com sucesso.`]);
+            })
+            .catch(err => {
+                if (isCancelled) return;
+                setCompileResult((prev) => ({ ...prev, camStatus: 'error' }));
+                setLogs((prev) => [...prev, `> B-Rep [ERRO]: ${err.message}`]);
+                setSolidMesh(null);
+            });
 
-        // Cleanup: Mata o worker e marca como cancelado se o utilizador continuar a escrever código
         return () => {
             isCancelled = true;
-            worker.terminate();
+            // O computeSolidModel já lida internamente com o worker.terminate()
         };
     }, [compileResult.stock, compileResult.operations]);
 
