@@ -10,167 +10,187 @@ async function getOC() {
     return oc;
 }
 
+// Global registry for objects that need deletion
+let registry = [];
+const reg = (obj) => {
+    if (obj && obj.delete) registry.push(obj);
+    return obj;
+};
+const cleanup = () => {
+    registry.forEach(obj => {
+        try { obj.delete(); } catch (e) { }
+    });
+    registry = [];
+};
+
 async function buildSolid(request) {
     const oc = await getOC();
     const { stock: { width, height, depth }, ops } = request;
 
-    // 1. Cria o Bloco Base
-    const stockBox = new oc.BRepPrimAPI_MakeBox_2(
-        new oc.gp_Pnt_3(-width / 2, -height / 2, -depth),
-        width, height, depth
-    );
-    let solid = stockBox.Shape();
+    console.group(`[B-Rep Worker] Iniciando Processamento`);
+    console.log(`Config: ${width}x${height}x${depth}, Ops: ${ops.length}`);
 
-    const findConstructor = (path, name, args) => {
-        for (let i = 1; i <= 20; i++) {
-            const fullName = `${name}_${i}`;
-            if (path[fullName]) {
-                try { return new path[fullName](...args); } catch (e) { }
-            }
-        }
-        if (path[name]) {
-            try { return new path[name](...args); } catch (e) { }
-        }
-        return null;
-    };
-
-    // 2. Aplica as Operações (Pocket & Drill)
-    for (let opIdx = 0; opIdx < ops.length; opIdx++) {
-        const op = ops[opIdx];
-        
-        if (op.type === 'pocket' && op.points.length > 2) {
-            const wireMaker = findConstructor(oc, 'BRepBuilderAPI_MakeWire', []);
-            if (!wireMaker) continue;
-
-            for (let i = 0; i < op.points.length; i++) {
-                const p1 = op.points[i];
-                const p2 = op.points[(i + 1) % op.points.length];
-                const pt1 = new oc.gp_Pnt_3(p1.x, p1.y, 1);
-                const pt2 = new oc.gp_Pnt_3(p2.x, p2.y, 1);
-                const edgeMaker = findConstructor(oc, 'BRepBuilderAPI_MakeEdge', [pt1, pt2]);
-                if (edgeMaker && edgeMaker.IsDone()) {
-                    wireMaker.Add_1(edgeMaker.Edge());
-                }
-                pt1.delete(); pt2.delete();
-                if (edgeMaker) edgeMaker.delete();
-            }
-
-            if (!wireMaker.IsDone()) continue;
-            const wire = wireMaker.Wire();
-            const faceMaker = findConstructor(oc, 'BRepBuilderAPI_MakeFace', [wire, false]);
-            if (!faceMaker || !faceMaker.IsDone()) continue;
-
-            // Overshoot para evitar Z-Fighting
-            const vec = findConstructor(oc, 'gp_Vec', [0, 0, -(op.depth + 1.001)]); 
-            const prismMaker = findConstructor(oc, 'BRepPrimAPI_MakePrism', [faceMaker.Face(), vec, false, true]);
-
-            if (prismMaker && prismMaker.IsDone()) {
-                const prismShape = prismMaker.Shape();
-                const boolOp = findConstructor(oc, 'BRepAlgoAPI_Cut', [solid, prismShape]);
-                if (boolOp) {
-                    if (boolOp.SetFuzzyTolerance) boolOp.SetFuzzyTolerance(1e-5);
-                    boolOp.Build();
-                    if (boolOp.IsDone()) solid = boolOp.Shape();
-                    boolOp.delete();
+    try {
+        // 1. Construtor helper robusto
+        const fc = (name, args) => {
+            for (let i = 1; i <= 10; i++) {
+                const fn = `${name}_${i}`;
+                if (oc[fn]) {
+                    try {
+                        const obj = new oc[fn](...args);
+                        console.log(`[OCCT] Construtor: ${fn} (sucesso)`);
+                        return reg(obj);
+                    } catch (e) { }
                 }
             }
-            wireMaker.delete(); faceMaker.delete(); prismMaker.delete(); vec.delete();
+            if (oc[name]) {
+                try {
+                    const obj = new oc[name](...args);
+                    console.log(`[OCCT] Construtor: ${name} (sucesso)`);
+                    return reg(obj);
+                } catch (e) { }
+            }
+            return null;
+        };
 
-        } else if (op.type === 'drill') {
-            for (let ptIdx = 0; ptIdx < op.points.length; ptIdx++) {
-                const pt = op.points[ptIdx];
-                const cutLength = op.depth + 2;
-                const zBottom = 1 - cutLength;
+        // 2. Criação do Bloco Base
+        const p1 = reg(new oc.gp_Pnt_3(-width / 2, -height / 2, -depth));
+        const stockBox = fc('BRepPrimAPI_MakeBox', [p1, width, height, depth]);
+        if (!stockBox || !stockBox.IsDone()) throw new Error("Falha ao criar o Bloco Base.");
 
-                // CORREÇÃO: Construtores forçados e robustos para o Eixo (Ax2) com 3 parâmetros
-                const center = new oc.gp_Pnt_3(pt.x, pt.y, zBottom);
-                const dir = new oc.gp_Dir_4(0, 0, 1);
-                const vx = new oc.gp_Dir_4(1, 0, 0);
+        let solid = stockBox.Shape();
+        console.log("✓ Bloco Base criado.");
 
-                let ax2;
-                try { ax2 = new oc.gp_Ax2_2(center, dir, vx); }
-                catch(e) {
-                    try { ax2 = new oc.gp_Ax2_3(center, dir); }
-                    catch(e2) { ax2 = new oc.gp_Ax2(center, dir); }
-                }
+        // 3. Processamento de Operações
+        for (let opIdx = 0; opIdx < ops.length; opIdx++) {
+            const op = ops[opIdx];
+            console.group(`Op ${opIdx + 1}: ${op.type}`);
 
-                let cylMaker;
-                try { cylMaker = new oc.BRepPrimAPI_MakeCylinder_3(ax2, op.radius, cutLength + 1); }
-                catch(e) {
-                    try { cylMaker = new oc.BRepPrimAPI_MakeCylinder_2(ax2, op.radius, cutLength + 1); }
-                    catch(e2) { cylMaker = new oc.BRepPrimAPI_MakeCylinder(ax2, op.radius, cutLength + 1); }
-                }
+            try {
+                if (op.type === 'pocket' && op.points && op.points.length > 2) {
+                    const wireMaker = fc('BRepBuilderAPI_MakeWire', []);
+                    if (!wireMaker) throw new Error("Falha no MakeWire");
 
-                if (cylMaker && cylMaker.IsDone()) {
-                    const cylShape = cylMaker.Shape();
-                    let boolOp;
-                    try { boolOp = new oc.BRepAlgoAPI_Cut_3(solid, cylShape); }
-                    catch(e) {
-                        try { boolOp = new oc.BRepAlgoAPI_Cut_2(solid, cylShape); }
-                        catch(e2) { boolOp = findConstructor(oc, 'BRepAlgoAPI_Cut', [solid, cylShape]); }
+                    for (let i = 0; i < op.points.length; i++) {
+                        const a = op.points[i];
+                        const b = op.points[(i + 1) % op.points.length];
+                        const dist = Math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2);
+                        if (dist < 0.001) continue;
+
+                        const ptA = reg(new oc.gp_Pnt_3(a.x, a.y, 2));
+                        const ptB = reg(new oc.gp_Pnt_3(b.x, b.y, 2));
+                        const edgeMaker = fc('BRepBuilderAPI_MakeEdge', [ptA, ptB]);
+                        if (edgeMaker && edgeMaker.IsDone()) {
+                            wireMaker.Add_1(edgeMaker.Edge());
+                        }
                     }
 
+                    if (!wireMaker.IsDone()) throw new Error("Wire não fechado ou inválido.");
+
+                    const faceMaker = fc('BRepBuilderAPI_MakeFace', [wireMaker.Wire(), false]);
+                    if (!faceMaker || !faceMaker.IsDone()) throw new Error("Falha ao gerar Face do pocket.");
+
+                    const vec = fc('gp_Vec', [0, 0, -(op.depth + 4)]);
+                    const prism = fc('BRepPrimAPI_MakePrism', [faceMaker.Face(), vec, false, true]);
+                    if (!prism || !prism.IsDone()) throw new Error("Falha na extrusão (Prism).");
+
+                    const boolOp = fc('BRepAlgoAPI_Cut', [solid, prism.Shape()]);
                     if (boolOp) {
-                        if (boolOp.SetFuzzyTolerance) boolOp.SetFuzzyTolerance(1e-5);
+                        const setter = boolOp.SetFuzzyTolerance || boolOp.SetFuzzyValue;
+                        if (setter) setter.call(boolOp, 1e-4);
                         boolOp.Build();
                         if (boolOp.IsDone() && !boolOp.Shape().IsNull()) {
                             solid = boolOp.Shape();
+                            console.log("✓ Pocket aplicado.");
                         }
-                        boolOp.delete();
                     }
                 }
-                center.delete(); dir.delete(); vx.delete(); ax2.delete(); if (cylMaker) cylMaker.delete();
+                else if (op.type === 'drill') {
+                    for (const pt of op.points) {
+                        const loc = reg(new oc.gp_Pnt_3(pt.x, pt.y, 2));
+                        const dz = reg(new oc.gp_Dir_4(0, 0, -1));
+                        const dx = reg(new oc.gp_Dir_4(1, 0, 0));
+                        const ax2 = fc('gp_Ax2', [loc, dz, dx]);
+
+                        const cyl = fc('BRepPrimAPI_MakeCylinder', [ax2, op.radius, op.depth + 4]);
+                        if (cyl && cyl.IsDone()) {
+                            const boolOp = fc('BRepAlgoAPI_Cut', [solid, cyl.Shape()]);
+                            if (boolOp) {
+                                const setter = boolOp.SetFuzzyTolerance || boolOp.SetFuzzyValue;
+                                if (setter) setter.call(boolOp, 1e-4);
+                                boolOp.Build();
+                                if (boolOp.IsDone() && !boolOp.Shape().IsNull()) {
+                                    solid = boolOp.Shape();
+                                }
+                            }
+                        }
+                    }
+                    console.log(`✓ ${op.points.length} furos aplicados.`);
+                }
+            } catch (err) {
+                console.error(`Erro na Op ${opIdx + 1}:`, err.message);
             }
+            console.groupEnd();
         }
-    }
 
-    // 3. Extração da Malha para o Three.js
-    const mesh = new oc.BRepMesh_IncrementalMesh_2(solid, 0.1, false, 0.5, false);
-    mesh.Perform();
+        // 4. Mesh & Triangulação
+        const mesh = reg(new oc.BRepMesh_IncrementalMesh_2(solid, 0.1, false, 0.5, false));
+        mesh.Perform();
 
-    const vertices = []; const normals = []; const indices = [];
-    const explorer = new oc.TopExp_Explorer_2(solid, oc.TopAbs_ShapeEnum.TopAbs_FACE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
-    let vertexOffset = 0;
+        const vertices = []; const normals = []; const indices = [];
+        const explorer = reg(new oc.TopExp_Explorer_2(solid, oc.TopAbs_ShapeEnum.TopAbs_FACE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE));
+        let vBase = 0;
 
-    while (explorer.More()) {
-        const face = oc.TopoDS.Face_1(explorer.Current());
-        const location = new oc.TopLoc_Location_1();
-        const triangulation = oc.BRep_Tool.Triangulation(face, location);
+        while (explorer.More()) {
+            const face = oc.TopoDS.Face_1(explorer.Current());
+            const loc = reg(new oc.TopLoc_Location_1());
+            const tri = oc.BRep_Tool.Triangulation(face, loc);
 
-        if (!triangulation.IsNull()) {
-            const triMesh = triangulation.get();
-            const nTriangles = triMesh.NbTriangles();
-            const nNodes = triMesh.NbNodes();
-            
-            // CORREÇÃO VITAL: Extrair a Matriz de Transformação!
-            const trsf = location.Transformation(); 
+            if (!tri.IsNull()) {
+                const meshData = tri.get();
+                const nTri = meshData.NbTriangles();
+                const nNodes = meshData.NbNodes();
+                const trsf = loc.Transformation();
 
-            for (let i = 1; i <= nNodes; i++) {
-                const node = triMesh.Node(i);
-                
-                // Aplicar a transformação para que os furos apareçam no sítio certo!
-                const pnt = new oc.gp_Pnt_3(node.X(), node.Y(), node.Z());
-                pnt.Transform(trsf);
+                // Extração de Normais
+                const hasNormals = meshData.HasNormals();
 
-                vertices.push(pnt.X(), pnt.Y(), pnt.Z());
-                pnt.delete(); node.delete();
-                normals.push(0, 0, 1);
+                for (let i = 1; i <= nNodes; i++) {
+                    const p = meshData.Node(i);
+                    const pnt = reg(new oc.gp_Pnt_3(p.X(), p.Y(), p.Z()));
+                    pnt.Transform(trsf);
+                    vertices.push(pnt.X(), pnt.Y(), pnt.Z());
+
+                    if (hasNormals) {
+                        const n = meshData.Normal(i);
+                        const nDir = reg(new oc.gp_Dir_5(n.X(), n.Y(), n.Z()));
+                        nDir.Transform(trsf);
+                        normals.push(nDir.X(), nDir.Y(), nDir.Z());
+                    } else {
+                        normals.push(0, 0, 1);
+                    }
+                }
+
+                for (let i = 1; i <= nTri; i++) {
+                    const t = meshData.Triangle(i);
+                    indices.push(vBase + t.Value(1) - 1, vBase + t.Value(2) - 1, vBase + t.Value(3) - 1);
+                }
+                vBase += nNodes;
             }
-
-            for (let i = 1; i <= nTriangles; i++) {
-                const tri = triMesh.Triangle(i);
-                indices.push(vertexOffset + tri.Value(1) - 1, vertexOffset + tri.Value(2) - 1, vertexOffset + tri.Value(3) - 1);
-                tri.delete();
-            }
-            vertexOffset += nNodes;
-            trsf.delete(); // Limpar memória
+            explorer.Next();
         }
-        face.delete(); location.delete();
-        explorer.Next();
-    }
-    explorer.delete();
 
-    return { vertices: new Float32Array(vertices), normals: new Float32Array(normals), indices: new Uint32Array(indices) };
+        console.log(`✓ Malha gerada: ${vertices.length / 3} vértices.`);
+        return {
+            vertices: new Float32Array(vertices),
+            normals: new Float32Array(normals),
+            indices: new Uint32Array(indices)
+        };
+
+    } finally {
+        cleanup();
+        console.groupEnd();
+    }
 }
 
 self.onmessage = async (e) => {
@@ -179,6 +199,7 @@ self.onmessage = async (e) => {
         const result = await buildSolid(e.data);
         self.postMessage(result, [result.vertices.buffer, result.normals.buffer, result.indices.buffer]);
     } catch (err) {
-        self.postMessage({ vertices: new Float32Array(), normals: new Float32Array(), indices: new Uint32Array(), error: err.message });
+        console.error("[B-Rep Worker] Fallback:", err);
+        self.postMessage({ error: err.message });
     }
 };

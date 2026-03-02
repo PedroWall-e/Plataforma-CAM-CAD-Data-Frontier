@@ -160,39 +160,32 @@ export default function EditorPage() {
 
     // Step 3: Run B-Rep solid computation via OpenCASCADE
     useEffect(() => {
-        // 1. Só executa se houver stock e operações
         if (!compileResult.stock || compileResult.operations.length === 0) {
             setSolidMesh(null);
             return;
         }
 
         let isCancelled = false;
-        setLogs((prev) => [...prev, `> B-Rep: Iniciando motor OpenCASCADE...`]);
-        setCompileResult((prev) => ({ ...prev, camStatus: 'computing' }));
 
-        // 2. [CORREÇÃO VITAL] Utilize a função computeSolidModel do cam.ts
-        // Ela trata a conversão de Tool -> Radius e Path2D -> Points
+        setCompileResult((prev: CompileResult) => ({ ...prev, camStatus: 'computing' }));
+        setLogs((prev: string[]) => [...prev, `> B-Rep: Construindo sólido OpenCASCADE...`]);
+
         computeSolidModel(compileResult.stock, compileResult.operations)
             .then(meshData => {
                 if (isCancelled) return;
-                
-                // 3. Converte a malha recebida do Worker para geometria do Three.js
                 const geometry = occtMeshToGeometry(meshData);
                 setSolidMesh(geometry);
-                setCompileResult((prev) => ({ ...prev, camStatus: 'done' }));
-                setLogs((prev) => [...prev, `> B-Rep: Sólido gerado com sucesso.`]);
+                setCompileResult((prev: CompileResult) => ({ ...prev, camStatus: 'done' }));
+                setLogs((prev: string[]) => [...prev, `> B-Rep: Sólido carregado com sucesso.`]);
             })
             .catch(err => {
                 if (isCancelled) return;
-                setCompileResult((prev) => ({ ...prev, camStatus: 'error' }));
-                setLogs((prev) => [...prev, `> B-Rep [ERRO]: ${err.message}`]);
-                setSolidMesh(null);
+                setCompileResult((prev: CompileResult) => ({ ...prev, camStatus: 'error' }));
+                setLogs((prev: string[]) => [...prev, `> B-Rep [ERRO]: ${err.message}`]);
+                console.error("[B-Rep Engine]", err);
             });
 
-        return () => {
-            isCancelled = true;
-            // O computeSolidModel já lida internamente com o worker.terminate()
-        };
+        return () => { isCancelled = true; };
     }, [compileResult.stock, compileResult.operations]);
 
     // Handle G-Code generation and download

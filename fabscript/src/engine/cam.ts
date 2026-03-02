@@ -100,13 +100,15 @@ export function computeSolidModel(
                         type: 'drill',
                         points: op.points,
                         depth: op.depth,
-                        radius: op.tool.diameter / 2,
+                        radius: op.tool.diameter / 2, // <--- Crucial
                         tool: { name: op.tool.name }
                     };
                 }
                 return null;
             })
             .filter((op): op is SolidOp => op !== null);
+
+        console.log("[CAM Engine] Payload final enviado ao Worker:", { stock, ops });
 
         worker.onmessage = (e: MessageEvent<any>) => {
             // Emscripten or other internal tools sometimes broadcast messages on the worker.
