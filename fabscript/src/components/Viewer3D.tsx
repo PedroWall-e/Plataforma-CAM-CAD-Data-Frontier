@@ -58,7 +58,7 @@ const Viewer3D: React.FC<Viewer3DProps> = ({ geometries, stock, offsetPaths = []
                 <>
                     {/* Render Stock */}
                     {stock && (
-                        <mesh position={[stock.width / 2, stock.height / 2, -stock.depth / 2]}>
+                        <mesh position={[0, 0, -stock.depth / 2]}>
                             <boxGeometry args={[stock.width, stock.height, stock.depth]} />
                             <meshStandardMaterial
                                 color="#2a3f54"

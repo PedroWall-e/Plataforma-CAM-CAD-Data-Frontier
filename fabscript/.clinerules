@@ -1,0 +1,29 @@
+# Regras do Projeto Fabscript (Plataforma CAD/CAM)
+
+## 1. Stack e Padrões Principais
+- **Frontend:** React, TypeScript, Vite.
+- **Estilos:** CSS/Tailwind (conforme configurado em `src/index.css` e `App.css`).
+- **Motor (Core):** OpenCASCADE (WASM) para operações matemáticas de geometria 3D, geração de trajetórias e G-code.
+
+## 2. Separação Estrita de Responsabilidades (Architecture)
+- **Interface (UI):** Ficheiros em `src/components/` e `src/pages/` (ex: Viewer3D, CodeEditor) devem focar-se estritamente na renderização do ecrã e gestão de estado local. NÃO coloque lógica matemática complexa aqui.
+- **Motor (Engine):** Toda a lógica matemática, compilação de operações CAD/CAM e geração de ficheiros deve permanecer dentro de `src/engine/`.
+- **Performance (Regra de Ouro):** O cálculo de trajetórias (Toolpaths) e operações booleanas em 3D bloqueia o browser. Todo o processamento pesado DEVE ser delegado para os Web Workers (ex: `src/engine/workers/cam.worker.ts`). Nunca bloqueie a "Main Thread" do React.
+
+## 3. Cuidados Especiais com OpenCASCADE (WASM)
+- O C++ compilado para WASM (`occt-bridge.ts`) não possui *Garbage Collector* automático perfeito. Tenha extrema atenção a *memory leaks* (fugas de memória). Quando criar instâncias geométricas no OpenCASCADE, garanta o uso do método `.delete()` na instância após o seu uso, sempre que aplicável.
+- Mantenha a comunicação com o WASM isolada no ficheiro de "bridge" e nos Web Workers.
+
+## 4. Regras de Código (TypeScript / React)
+- Tipagem estrita: Evite a todo o custo utilizar `any`. Utilize e expanda as interfaces já definidas em `src/engine/api/` (Tool, Stock, Operation, Path2D).
+- Use sempre Functional Components com Hooks no React.
+- Lembre-se sempre de fazer a limpeza (cleanup) de Listeners, Workers ou instâncias 3D dentro do retorno do `useEffect` para evitar componentes "fantasmas".
+
+## 5. Limites do Agente (Proteção Absoluta de Tokens)
+Para não gastar contexto ou créditos desnecessários:
+- **PROIBIDO** ler ou analisar os seguintes diretórios: `node_modules`, `dist`, `.git`.
+- **PROIBIDO** tentar ler os conteúdos dos seguintes ficheiros: `package-lock.json`, ficheiros `.wasm` (como `public/opencascade.wasm.wasm`) e ficheiros `.svg`.
+- Concentre-se apenas na pasta `src/` e nos ficheiros de configuração base (`package.json`, `vite.config.ts`, `tsconfig.json`).
+
+## 6. Comunicação e Estilo
+- Os comentários no código, mensagens de erro (logs/throws) e documentação de funções devem ser escritos sempre em Português.
