@@ -165,21 +165,47 @@ export default function EditorPage() {
             return;
         }
 
+        // Criamos um sinalizador para ignorar o resultado se o efeito for cancelado
+        let isCancelled = false;
+
         setLogs((prev: string[]) => [...prev, `> B-Rep: Construindo sólido OpenCASCADE...`]);
         setCompileResult((prev: CompileResult) => ({ ...prev, camStatus: 'computing' }));
 
-        computeSolidModel(compileResult.stock, compileResult.operations)
-            .then(meshData => {
+        // Criamos um controlador para poder cancelar o worker se o código mudar
+        const worker = new Worker('/occt-worker.js', { type: 'module' });
+        
+        // Função para processar a resposta do worker
+        const handleMessage = (event: MessageEvent) => {
+            if (isCancelled) return; // Ignora se o utilizador já digitou algo novo
+            
+            const { vertices, normals, indices, error } = event.data;
+            if (error) {
+                setCompileResult((prev: CompileResult) => ({ ...prev, camStatus: 'error' }));
+                setLogs((prev: string[]) => [...prev, `> B-Rep [ERRO]: ${error}`]);
+                setSolidMesh(null);
+            } else {
+                const meshData = { vertices: new Float32Array(vertices), normals: new Float32Array(normals), indices: new Uint32Array(indices) };
                 const geometry = occtMeshToGeometry(meshData);
                 setSolidMesh(geometry);
                 setCompileResult((prev: CompileResult) => ({ ...prev, camStatus: 'done' }));
                 setLogs((prev: string[]) => [...prev, `> B-Rep: Sólido carregado com sucesso.`]);
-            })
-            .catch((err: Error) => {
-                setCompileResult((prev: CompileResult) => ({ ...prev, camStatus: 'error' }));
-                setLogs((prev: string[]) => [...prev, `> B-Rep [ERRO]: ${err.message}`]);
-                setSolidMesh(null);
-            });
+            }
+        };
+        
+        worker.onmessage = handleMessage;
+        
+        // Envia dados para o worker
+        worker.postMessage({
+            type: 'SOLID_MODEL',
+            stock: compileResult.stock,
+            ops: compileResult.operations
+        });
+
+        // Cleanup: Mata o worker e marca como cancelado se o utilizador continuar a escrever código
+        return () => {
+            isCancelled = true;
+            worker.terminate();
+        };
     }, [compileResult.stock, compileResult.operations]);
 
     // Handle G-Code generation and download
