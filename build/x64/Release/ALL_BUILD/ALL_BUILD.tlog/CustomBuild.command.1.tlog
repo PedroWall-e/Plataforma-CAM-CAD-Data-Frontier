@@ -1,0 +1,10 @@
+^C:\USERS\PEDRO\ONEDRIVE\ÁREA DE TRABALHO\PLATAFORMA-CAM-CAD-DATA-FRONTIER\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" "-SC:/Users/Pedro/OneDrive/Área de Trabalho/Plataforma-CAM-CAD-Data-Frontier" "-BC:/Users/Pedro/OneDrive/Área de Trabalho/Plataforma-CAM-CAD-Data-Frontier/build" --check-stamp-file "C:/Users/Pedro/OneDrive/Área de Trabalho/Plataforma-CAM-CAD-Data-Frontier/build/CMakeFiles/generate.stamp"
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

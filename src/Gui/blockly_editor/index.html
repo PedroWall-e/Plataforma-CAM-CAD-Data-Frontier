@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CAD Paramétrico — Editor Visual + Visualizador 3D</title>
+  <meta name="description"
+    content="Editor visual Blockly com transpilador build123d e visualizador WebGL 3D em tempo real." />
+
+  <!-- ── Blockly ───────────────────────────────────────────────────────── -->
+  <script src="https://unpkg.com/blockly/blockly.min.js"></script>
+
+  <!-- ── Three.js ─────────────────────────────────────────────────────── -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three":                    "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/":            "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <!-- ── Google Fonts ─────────────────────────────────────────────────── -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet" />
+
+  <style>
+    /* ── Design System ─────────────────────────────────────────────────── */
+    :root {
+      --bg: #0e1117;
+      --surface: #161b27;
+      --surface2: #1e2535;
+      --surface3: #252d3d;
+      --border: rgba(255, 255, 255, 0.07);
+      --accent: #3d7fff;
+      --accent-glow: rgba(61, 127, 255, 0.25);
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --error: #f87171;
+      --text: #e2e8f0;
+      --text-muted: #64748b;
+      --mono: 'JetBrains Mono', monospace;
+      --sans: 'Inter', sans-serif;
+    }
+
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      height: 100%;
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    /* ── Layout root ────────────────────────────────────────────────────── */
+    .app {
+      display: grid;
+      grid-template-rows: 52px 1fr;
+      height: 100vh;
+    }
+
+    /* ── Topbar ─────────────────────────────────────────────────────────── */
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 18px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      z-index: 10;
+    }
+
+    .topbar__brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 600;
+      font-size: 15px;
+    }
+
+    .topbar__icon {
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(135deg, #3d7fff, #7c3aed);
+      border-radius: 7px;
+      display: grid;
+      place-items: center;
+      font-size: 14px;
+    }
+
+    .badge {
+      font-size: 11px;
+      font-weight: 500;
+      padding: 2px 8px;
+      border-radius: 20px;
+      background: var(--accent-glow);
+      color: var(--accent);
+      border: 1px solid rgba(61, 127, 255, .3);
+    }
+
+    .topbar__center {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    #server-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--text-muted);
+    }
+
+    .dot.online {
+      background: var(--success);
+      box-shadow: 0 0 6px var(--success);
+    }
+
+    .dot.offline {
+      background: var(--error);
+    }
+
+    .dot.pending {
+      background: var(--warning);
+      animation: blink .8s ease-in-out infinite;
+    }
+
+    @keyframes blink {
+
+      0%,
+      100% {
+        opacity: 1
+      }
+
+      50% {
+        opacity: .3
+      }
+    }
+
+    .topbar__actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 7px;
+      font-size: 13px;
+      font-weight: 500;
+      font-family: var(--sans);
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all .15s;
+    }
+
+    .btn--primary {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .btn--primary:hover {
+      background: #5590ff;
+      box-shadow: 0 0 16px var(--accent-glow);
+    }
+
+    .btn--ghost {
+      background: transparent;
+      color: var(--text-muted);
+      border-color: var(--border);
+    }
+
+    .btn--ghost:hover {
+      color: var(--text);
+      border-color: rgba(255, 255, 255, .2);
+    }
+
+    /* ── Main 3-column layout ───────────────────────────────────────────── */
+    .main-layout {
+      display: grid;
+      grid-template-columns: 1fr 340px 380px;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    /* ── Blockly pane ───────────────────────────────────────────────────── */
+    .pane {
+      position: relative;
+      overflow: hidden;
+    }
+
+    #blockly-canvas {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* ── Code pane ──────────────────────────────────────────────────────── */
+    .pane--code {
+      display: grid;
+      grid-template-rows: 40px 1fr 36px;
+      border-left: 1px solid var(--border);
+      background: var(--surface2);
+    }
+
+    .pane-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .pane-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .7px;
+      color: var(--text-muted);
+    }
+
+    .live-badge {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      color: var(--success);
+    }
+
+    .live-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--success);
+      animation: pulse 1.8s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1
+      }
+
+      50% {
+        opacity: .3
+      }
+    }
+
+    #code-output {
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      border: none;
+      outline: none;
+      resize: none;
+      padding: 14px;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      line-height: 1.75;
+      color: #a5f3fc;
+      caret-color: var(--accent);
+    }
+
+    .pane-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+      border-top: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    #status-code {
+      transition: color .3s;
+    }
+
+    #status-code.ok {
+      color: var(--success);
+    }
+
+    #status-code.error {
+      color: var(--error);
+    }
+
+    /* ── 3D viewer pane ─────────────────────────────────────────────────── */
+    .pane--viewer {
+      display: grid;
+      grid-template-rows: 40px 1fr 36px;
+      border-left: 1px solid var(--border);
+      background: #080c12;
+    }
+
+    #viewer-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    #render-spinner {
+      position: absolute;
+      inset: 40px 0 36px 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(8, 12, 18, .7);
+      backdrop-filter: blur(4px);
+      font-size: 13px;
+      color: var(--accent);
+      gap: 8px;
+      z-index: 5;
+    }
+
+    #render-spinner.visible {
+      display: flex;
+    }
+
+    .spinner-ring {
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(61, 127, 255, .3);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    #viewer-status {
+      transition: color .3s;
+    }
+
+    #viewer-status.ok {
+      color: var(--success);
+    }
+
+    #viewer-status.error {
+      color: var(--error);
+    }
+
+    #viewer-status.loading {
+      color: var(--warning);
+    }
+
+    /* ── Blockly dark overrides ─────────────────────────────────────────── */
+    .blocklyToolboxDiv {
+      background: var(--surface2) !important;
+      border-right: 1px solid var(--border) !important;
+    }
+
+    .blocklyTreeLabel {
+      color: var(--text) !important;
+      font-family: var(--sans) !important;
+    }
+
+    .blocklyFlyoutBackground {
+      fill: var(--surface) !important;
+    }
+
+    .blocklyMainBackground {
+      fill: #0c1019 !important;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+
+    <!-- ── Topbar ──────────────────────────────────────────────────────── -->
+    <header class="topbar">
+      <div class="topbar__brand">
+        <div class="topbar__icon">⬡</div>
+        CAD Paramétrico
+        <span class="badge">M11-M12 Live</span>
+      </div>
+
+      <div class="topbar__center">
+        <div id="server-status">
+          <span class="dot" id="server-dot"></span>
+          <span id="server-label">Verificando servidor…</span>
+        </div>
+      </div>
+
+      <div class="topbar__actions">
+        <button class="btn btn--ghost" id="btn-clear">🗑 Limpar</button>
+        <button class="btn btn--ghost" id="btn-copy">⎘ Copiar Código</button>
+        <button class="btn btn--primary" id="btn-generate">▶ Gerar Agora</button>
+      </div>
+    </header>
+
+    <!-- ── Main layout ─────────────────────────────────────────────────── -->
+    <div class="main-layout">
+
+      <!-- Blockly -->
+      <div class="pane">
+        <div id="blockly-canvas"></div>
+      </div>
+
+      <!-- Code output -->
+      <div class="pane pane--code">
+        <div class="pane-header">
+          <span class="pane-title">Python · build123d</span>
+          <span class="live-badge"><span class="live-dot"></span>Tempo real</span>
+        </div>
+        <textarea id="code-output" spellcheck="false" readonly
+          placeholder="# Arraste blocos para gerar código…"></textarea>
+        <div class="pane-footer">
+          <span>Builder Mode</span>
+          <span id="status-code">Aguardando…</span>
+        </div>
+      </div>
+
+      <!-- 3D Viewer -->
+      <div class="pane pane--viewer">
+        <div class="pane-header">
+          <span class="pane-title">Visualizador 3D — WebGL</span>
+          <span id="viewer-status">Aguardando modelo…</span>
+        </div>
+        <div style="position:relative;height:100%;">
+          <canvas id="viewer-canvas"></canvas>
+          <div id="render-spinner"><span class="spinner-ring"></span>Gerando B-Rep…</div>
+        </div>
+        <div class="pane-footer">
+          <span>Three.js · STLLoader</span>
+          <span id="triangle-count">—</span>
+        </div>
+      </div>
+
+    </div><!-- .main-layout -->
+  </div><!-- .app -->
+
+  <!-- ── Toolbox XML ──────────────────────────────────────────────────── -->
+  <xml id="toolbox" style="display:none">
+    <category name="Estrutura" colour="#3d7fff">
+      <block type="cad_buildpart"></block>
+    </category>
+    <category name="Primitivas" colour="#7c3aed">
+      <block type="cad_box"></block>
+      <block type="cad_cylinder"></block>
+    </category>
+    <category name="Operações" colour="#059669">
+      <block type="cad_fillet"></block>
+    </category>
+    <category name="Exportar" colour="#d97706">
+      <block type="cad_export_step"></block>
+      <block type="cad_export_stl"></block>
+    </category>
+  </xml>
+
+  <!-- ── Scripts (ordem obrigatória) ───────────────────────────────────── -->
+  <script src="custom_blocks.js"></script>
+  <script src="transpiler.js"></script>
+  <!-- main.js carrega Three.js como módulo ES -->
+  <script type="module" src="main.js"></script>
+</body>
+
+</html>
