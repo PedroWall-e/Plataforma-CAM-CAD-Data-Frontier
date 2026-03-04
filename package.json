@@ -1,0 +1,14 @@
+{
+    "name": "plataforma-cam-cad-data-frontier",
+    "version": "1.0.0",
+    "description": "Plataforma CAM/CAD Data Frontier",
+    "main": "index.js",
+    "dependencies": {
+        "three": "^0.160.0",
+        "blockly": "^10.0.0"
+    },
+    "devDependencies": {},
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1"
+    }
+}
