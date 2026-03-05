@@ -1,0 +1,68 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# docker-compose.yml — CAD Paramétrico Stack Completa (M23-M24)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# Uso:
+#   docker compose up --build        # primeira vez
+#   docker compose up -d             # background
+#   docker compose down              # parar
+#
+# Acesso:
+#   Frontend: http://localhost:80
+#   Backend:  http://localhost:8000  (direto, em dev)
+#   Swagger:  http://localhost:8000/docs
+# ══════════════════════════════════════════════════════════════════════════════
+
+version: "3.9"
+
+services:
+
+  # ── Backend: FastAPI + build123d + Gemini VLM ───────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cad_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env # GOOGLE_API_KEY e demais vars
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      # Volume de desenvolvimento: reflete edições locais sem rebuild
+      # Comentar em produção para usar apenas a imagem compilada
+      - ./src/App:/app/src/App:ro
+    networks:
+      - cad-net
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ── Frontend: Nginx servindo HTML/JS estático + proxy /api/ → backend ───────
+  frontend:
+    image: nginx:alpine
+    container_name: cad_frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      # Conteúdo estático do editor
+      - ./src/Gui/blockly_editor:/usr/share/nginx/html:ro
+      # Configuração do Nginx com proxy reverso
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - cad-net
+    depends_on:
+      backend:
+        condition: service_healthy
+
+# ── Rede interna compartilhada ─────────────────────────────────────────────────
+networks:
+  cad-net:
+    driver: bridge
+    name: cad_network

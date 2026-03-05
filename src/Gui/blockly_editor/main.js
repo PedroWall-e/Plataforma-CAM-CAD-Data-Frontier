@@ -18,8 +18,29 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
 
 /* global Blockly, generatePythonFromWorkspace */
 
-const SERVER_URL = "http://localhost:8000";
+/**
+ * SERVER_URL — detecta automaticamente o ambiente:
+ *   • Dev local (localhost / 127.0.0.1 / file://) → uvicorn direto na porta 8000
+ *   • Docker (nginx proxy) / qualquer outro host → /api (proxy reverso)
+ */
+const SERVER_URL = (() => {
+    const { hostname, protocol } = window.location;
+    const isLocal = protocol === "file:"
+        || hostname === "localhost"
+        || hostname === "127.0.0.1"
+        || hostname === "";
+    return isLocal ? "http://localhost:8000" : `${window.location.origin}/api`;
+})();
+
 const DEBOUNCE_MS = 500;
+
+console.info(`[main.js] SERVER_URL resolvida: ${SERVER_URL}`);
+
+/** STEP model base64 da última geração IA */
+let currentStepBase64 = null;
+
+/** Flag de conectividade — atualizada pelo health check */
+let serverOnline = false;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. Tema Blockly (dark)
@@ -178,6 +199,12 @@ function loadSTLBuffer(buffer) {
 const spinner = document.getElementById("render-spinner");
 
 async function sendCodeToServer(pythonCode) {
+    // Não tentar se o servidor estiver offline (evita erros redundantes no loop Blockly)
+    if (!serverOnline) {
+        setViewerStatus("🔌 Servidor inacessível — reinicie o servidor.", "error");
+        return;
+    }
+
     spinner.classList.add("visible");
     setViewerStatus("Gerando B-Rep…", "loading");
 
@@ -214,16 +241,23 @@ async function checkServerHealth() {
     dotEl.className = "dot pending";
     labelEl.textContent = "Conectando…";
     try {
-        const res = await fetch(`${SERVER_URL}/health`, { signal: AbortSignal.timeout(2000) });
+        const res = await fetch(`${SERVER_URL}/health`, { signal: AbortSignal.timeout(2500) });
         if (res.ok) {
+            const data = await res.json().catch(() => ({}));
             dotEl.className = "dot online";
-            labelEl.textContent = `Servidor online · port 8000`;
+            labelEl.textContent =
+                `Servidor online · v${data.version ?? "?"} · · IA: ${data.ai_engine ? "✅" : "⚠ sem chave"}`;
+            serverOnline = true;
             return true;
         }
         throw new Error(`HTTP ${res.status}`);
     } catch {
         dotEl.className = "dot offline";
-        labelEl.textContent = "Servidor offline — rode: uvicorn src.App.server.main:app --reload";
+        const cmd = SERVER_URL.includes("localhost")
+            ? "uvicorn src.App.server.main:app --reload --port 8000"
+            : "docker compose up --build";
+        labelEl.textContent = `🔌 Servidor inacessível — rode: ${cmd}`;
+        serverOnline = false;
         return false;
     }
 }
@@ -311,8 +345,345 @@ document.getElementById("btn-generate").addEventListener("click", () => {
     if (code.trim()) sendCodeToServer(code);
 });
 
-// Blockly resize
+// ──────────────────────────────────────────────────────────────────────────────
+// 9. AI Chat Panel — M17-M18
+// ──────────────────────────────────────────────────────────────────────────────
+
+const aiLog = document.getElementById("ai-log");
+const aiPromptEl = document.getElementById("ai-prompt");
+const btnAIGen = document.getElementById("btn-ai-generate");
+
+/**
+ * Adiciona uma mensagem ao log de chat do painel de IA.
+ * @param {"user"|"agent"|"status"} role
+ * @param {string} text
+ * @returns {HTMLElement} o elemento criado (para atualição posterior)
+ */
+function addChatMessage(role, text) {
+    const msg = document.createElement("div");
+    msg.className = `ai-msg ai-msg--${role}`;
+    msg.innerHTML = `<div class="ai-msg__bubble"></div>`;
+    msg.querySelector(".ai-msg__bubble").textContent = text;
+    aiLog.appendChild(msg);
+    aiLog.scrollTop = aiLog.scrollHeight;
+    return msg;
+}
+
+/** Fases de status animadas durante a geração IA */
+const AI_STATUS_PHASES = [
+    "Gerando modelo…",
+    "Analisando topologia…",
+    "Otimizando B-Rep…",
+];
+
+/**
+ * Envia o prompt ao endpoint /generate_from_text (Self-Healing Loop).
+ * Lê X-Attempts para mostrar quantas tentativas foram necessárias.
+ * Carrega o STL retornado no viewer 3D (mesma cena do Blockly).
+ *
+ * @param {string} promptText - Descrição em linguagem natural
+ */
+async function sendAIPrompt(promptText) {
+    if (!promptText.trim()) return;
+
+    // Bloquear input durante geração
+    btnAIGen.disabled = true;
+    aiPromptEl.disabled = true;
+    btnAIGen.classList.add("loading");
+
+    // Exibir mensagem do usuário no chat
+    addChatMessage("user", promptText);
+
+    // Criar bubble de status animate (será atualizada)
+    const statusBubble = addChatMessage("status", AI_STATUS_PHASES[0]);
+    let phaseIdx = 0;
+    const phaseTimer = setInterval(() => {
+        phaseIdx = (phaseIdx + 1) % AI_STATUS_PHASES.length;
+        statusBubble.querySelector(".ai-msg__bubble").textContent =
+            AI_STATUS_PHASES[phaseIdx];
+    }, 1400);
+
+    // Spinner no viewer 3D
+    spinner.classList.add("visible");
+    setViewerStatus("IA gerando…", "loading");
+
+    try {
+        const res = await fetch(`${SERVER_URL}/generate_from_text`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prompt: promptText }),
+        });
+
+        if (!res.ok) {
+            const errJson = await res.json().catch(() => ({ detail: res.statusText }));
+            throw new Error(errJson.detail ?? res.statusText);
+        }
+
+        // ── M21-M22: processar JSON rico ──────────────────────────────────────────
+        const json = await res.json();
+
+        // a) Decodificar STL base64 → ArrayBuffer → viewer 3D
+        try {
+            const stlBuffer = _base64ToArrayBuffer(json.stl_base64);
+            loadSTLBuffer(stlBuffer);
+        } catch (decErr) {
+            throw new Error(`Falha ao decodificar STL: ${decErr.message}`);
+        }
+
+        // b) Exibir código Python gerado no painel de código
+        if (json.python_code) {
+            codeOutput.value = json.python_code;
+            setCodeStatus(`IA gerou ${json.python_code.split("\n").length} linhas`, "ok");
+        }
+
+        // c) Armazenar STEP base64 e habilitar botão de download
+        currentStepBase64 = json.step_base64 || null;
+        btnDownloadStep.disabled = !currentStepBase64;
+        if (currentStepBase64) {
+            btnDownloadStep.title = `Baixar modelo STEP gerado em ${json.attempts} tentativa(s)`;
+        }
+
+        // Mensagem de sucesso no chat
+        clearInterval(phaseTimer);
+        statusBubble.querySelector(".ai-msg__bubble").textContent = "";
+        const hasStep = currentStepBase64 ? " + STEP" : "";
+        addChatMessage(
+            "agent",
+            `✓ Modelo gerado em ${json.attempts} tentativa${json.attempts > 1 ? "s" : ""
+            }! (Self-Healing Loop${hasStep})`
+        );
+
+    } catch (err) {
+        clearInterval(phaseTimer);
+        statusBubble.querySelector(".ai-msg__bubble").textContent = "";
+        addChatMessage("agent", `⚠ Erro: ${err.message.slice(0, 200)}`);
+        setViewerStatus("Falha na geração IA", "error");
+        console.error("[AI Panel]", err);
+
+    } finally {
+        spinner.classList.remove("visible");
+        btnAIGen.disabled = false;
+        aiPromptEl.disabled = false;
+        btnAIGen.classList.remove("loading");
+        aiPromptEl.value = "";
+        aiPromptEl.style.height = "30px";
+    }
+}
+
+// ── Event listeners do chat panel ───────────────────────────────────────────────
+if (btnAIGen) {
+    btnAIGen.addEventListener("click", () => sendAIPrompt(aiPromptEl.value));
+}
+
+if (aiPromptEl) {
+    // Enter envia; Shift+Enter quebra linha
+    aiPromptEl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            sendAIPrompt(aiPromptEl.value);
+        }
+    });
+
+    // Auto-resize do textarea
+    aiPromptEl.addEventListener("input", () => {
+        aiPromptEl.style.height = "30px";
+        aiPromptEl.style.height = `${Math.min(aiPromptEl.scrollHeight, 80)}px`;
+    });
+}
+
+// Blockly resize (necessário após inject)
 new ResizeObserver(() => Blockly.svgResize(workspace))
     .observe(document.getElementById("blockly-canvas"));
 
-console.info("[main.js] CAD Editor M11-M12 iniciado.");
+// ──────────────────────────────────────────────────────────────────────────────
+// 11. Utilitários M21-M22 — base64 ⇄ ArrayBuffer / download / STEP
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Decodifica uma string base64 para um ArrayBuffer não gerenciado.
+ * Compatível com todos os browsers modernos via atob().
+ * @param {string} b64 - String base64 pura (sem prefixo data:)
+ * @returns {ArrayBuffer}
+ */
+function _base64ToArrayBuffer(b64) {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes.buffer;
+}
+
+/**
+ * Decodifica base64 e força o download do arquivo no browser.
+ * @param {string} b64      - Conteúdo em base64
+ * @param {string} filename - Nome do arquivo (ex: 'modelo_gerado.step')
+ * @param {string} mime     - MIME type (ex: 'application/octet-stream')
+ */
+function _downloadBase64File(b64, filename, mime) {
+    if (!b64) {
+        console.warn("[STEP Download] base64 vazio — nenhum modelo disponível.");
+        return;
+    }
+    try {
+        const buffer = _base64ToArrayBuffer(b64);
+        const blob = new Blob([buffer], { type: mime });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.style.display = "none";
+        document.body.appendChild(a);
+        a.click();
+        // Liberar URL após 2s (tempo suficiente para o browser iniciar o download)
+        setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 2000);
+    } catch (err) {
+        console.error("[STEP Download] Falha na decodificação base64:", err);
+        addChatMessage("agent", `⚠ Falha no download STEP: ${err.message}`);
+    }
+}
+
+// Referência ao botão de download STEP
+const btnDownloadStep = document.getElementById("btn-download-step");
+
+if (btnDownloadStep) {
+    btnDownloadStep.addEventListener("click", () => {
+        _downloadBase64File(
+            currentStepBase64,
+            "modelo_gerado.step",
+            "application/octet-stream"
+        );
+    });
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 10. PDF Upload — M19-M20 (VLM: Engenharia Reversa de Planta 2D → STL)
+// ──────────────────────────────────────────────────────────────────────────────
+
+const pdfFileInput = document.getElementById("pdf-file-input");
+const btnPDFUpload = document.getElementById("btn-pdf-upload");
+
+/** Fases de status exibidas no ai-log durante o processamento VLM */
+const PDF_STATUS_PHASES = [
+    "📄 Lendo planta 2D…",
+    "🧠 Analisando cotas VLM…",
+    "🔧 Gerando B-Rep…",
+];
+
+/**
+ * Envia um arquivo PDF para o endpoint /generate_from_pdf (VLM Self-Healing Loop).
+ * Exibe fases de status animadas no ai-log e carrega o STL retornado no viewer 3D.
+ *
+ * @param {File} file - Objeto File selecionado pelo usuário (deve ser .pdf)
+ */
+async function sendPDFToServer(file) {
+    if (!file || !file.name.toLowerCase().endsWith(".pdf")) {
+        addChatMessage("agent", "⚠ Selecione um arquivo .pdf válido.");
+        return;
+    }
+
+    // ── Bloquear UI durante processamento ────────────────────────────────────
+    btnAIGen.disabled = true;
+    aiPromptEl.disabled = true;
+    btnPDFUpload.disabled = true;
+    btnAIGen.classList.add("loading");
+
+    // Exibir mensagem do usuário no chat (nome do arquivo como contexto)
+    addChatMessage("user", `📎 ${file.name}`);
+
+    // Criar bubble de status animada
+    const statusBubble = addChatMessage("status", PDF_STATUS_PHASES[0]);
+    let phaseIdx = 0;
+    const phaseTimer = setInterval(() => {
+        phaseIdx = (phaseIdx + 1) % PDF_STATUS_PHASES.length;
+        statusBubble.querySelector(".ai-msg__bubble").textContent =
+            PDF_STATUS_PHASES[phaseIdx];
+    }, 1800);
+
+    // Spinner no viewer 3D
+    spinner.classList.add("visible");
+    setViewerStatus("VLM processando PDF…", "loading");
+
+    try {
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const res = await fetch(`${SERVER_URL}/generate_from_pdf`, {
+            method: "POST",
+            body: formData,   // Content-Type multipart/form-data (sem header manual)
+        });
+
+        if (!res.ok) {
+            const errJson = await res.json().catch(() => ({ detail: res.statusText }));
+            throw new Error(errJson.detail ?? res.statusText);
+        }
+
+        // ── M21-M22: processar JSON rico ──────────────────────────────────────
+        const json = await res.json();
+
+        // a) Decodificar STL base64 → ArrayBuffer → viewer 3D
+        try {
+            const stlBuffer = _base64ToArrayBuffer(json.stl_base64);
+            loadSTLBuffer(stlBuffer);
+        } catch (decErr) {
+            throw new Error(`Falha ao decodificar STL (PDF): ${decErr.message}`);
+        }
+
+        // b) Exibir código Python gerado no painel de código
+        if (json.python_code) {
+            codeOutput.value = json.python_code;
+            setCodeStatus(`VLM gerou ${json.python_code.split("\n").length} linhas`, "ok");
+        }
+
+        // c) Armazenar STEP base64 e habilitar botão de download
+        currentStepBase64 = json.step_base64 || null;
+        if (btnDownloadStep) {
+            btnDownloadStep.disabled = !currentStepBase64;
+            if (currentStepBase64) {
+                btnDownloadStep.title = `Baixar modelo STEP gerado em ${json.attempts} tentativa(s) (PDF/VLM)`;
+            }
+        }
+
+        // Mensagem de sucesso no chat
+        clearInterval(phaseTimer);
+        statusBubble.querySelector(".ai-msg__bubble").textContent = "";
+        const hasStep = currentStepBase64 ? " + STEP" : "";
+        addChatMessage(
+            "agent",
+            `✓ Modelo VLM gerado em ${json.attempts} tentativa${json.attempts > 1 ? "s" : ""
+            }! (PDF → B-Rep${hasStep})`
+        );
+
+    } catch (err) {
+        clearInterval(phaseTimer);
+        statusBubble.querySelector(".ai-msg__bubble").textContent = "";
+        addChatMessage("agent", `⚠ Erro PDF/VLM: ${err.message.slice(0, 240)}`);
+        setViewerStatus("Falha na engenharia reversa PDF", "error");
+        console.error("[PDF/VLM]", err);
+
+    } finally {
+        // ── Restaurar UI ──────────────────────────────────────────────────────
+        spinner.classList.remove("visible");
+        btnAIGen.disabled = false;
+        aiPromptEl.disabled = false;
+        btnPDFUpload.disabled = false;
+        btnAIGen.classList.remove("loading");
+        // Limpar o input de arquivo para permitir reenvio do mesmo PDF
+        if (pdfFileInput) pdfFileInput.value = "";
+    }
+}
+
+// ── Event listeners PDF ──────────────────────────────────────────────────────
+
+// Clicar no botão 📎 abre o file picker
+if (btnPDFUpload && pdfFileInput) {
+    btnPDFUpload.addEventListener("click", () => pdfFileInput.click());
+}
+
+// Quando o usuário seleciona um arquivo → enviar ao servidor
+if (pdfFileInput) {
+    pdfFileInput.addEventListener("change", () => {
+        const file = pdfFileInput.files?.[0];
+        if (file) sendPDFToServer(file);
+    });
+}
+
+console.info(`[main.js] CAD Editor M24 · Produção iniciado. SERVER_URL=${SERVER_URL}`);

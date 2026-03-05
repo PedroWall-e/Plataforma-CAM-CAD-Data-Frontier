@@ -1,0 +1,57 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# .dockerignore — Exclui arquivos desnecessários do contexto Docker (M23-M24)
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── Controle de versão ─────────────────────────────────────────────────────────
+.git/
+.gitignore
+
+# ── Ambientes virtuais Python ──────────────────────────────────────────────────
+venv/
+.venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+
+# ── Build artifacts C++ / CMake ────────────────────────────────────────────────
+build/
+dist/
+out/
+CMakeFiles/
+*.cmake
+*.make
+Makefile
+CMakeCache.txt
+
+# ── Artefatos CAD binários ─────────────────────────────────────────────────────
+*.step
+*.stl
+*.iges
+*.brep
+*.xbf
+
+# ── Node / Front-end ──────────────────────────────────────────────────────────
+node_modules/
+
+# ── IDE e editores ────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# ── Documentação e testes ─────────────────────────────────────────────────────
+docs/
+tests/
+
+# ── Segredos (nunca entram no container) ──────────────────────────────────────
+.env
+*.pem
+*.key
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
