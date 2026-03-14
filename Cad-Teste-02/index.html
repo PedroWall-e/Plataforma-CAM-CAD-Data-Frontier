@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CAD MVP — OpenCASCADE + Three.js</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { background: #0f1012; overflow: hidden; font-family: system-ui, sans-serif; }
+      #viewport { width: 100vw; height: 100vh; }
+
+      /* HUD */
+      #hud {
+        position: fixed; top: 0; left: 0; right: 0;
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 14px 22px;
+        background: linear-gradient(180deg, rgba(15,16,18,.92) 0%, transparent 100%);
+        pointer-events: none;
+      }
+      #hud h1 {
+        font-size: 14px; font-weight: 600; letter-spacing: .06em;
+        background: linear-gradient(90deg, #6ee7f7, #a78bfa);
+        -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+      }
+      #stats { font-size: 11px; color: #555; }
+
+      /* Painel de controlo */
+      #controls {
+        position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+        display: flex; gap: 10px; align-items: flex-end;
+        background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08);
+        border-radius: 14px; padding: 16px 22px; backdrop-filter: blur(12px);
+        flex-wrap: wrap; justify-content: center; max-width: 90vw;
+      }
+
+      /* Selector de primitiva */
+      #prim-selector {
+        display: flex; gap: 6px; align-self: center;
+      }
+      .prim-btn {
+        background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1);
+        border-radius: 8px; color: #9ca3af; font-size: 12px; padding: 6px 13px;
+        cursor: pointer; transition: all .15s;
+      }
+      .prim-btn:hover   { background: rgba(255,255,255,.1); color: #e0e0e0; }
+      .prim-btn.active  {
+        background: linear-gradient(135deg,rgba(110,231,247,.15),rgba(167,139,250,.15));
+        border-color: #6ee7f7; color: #6ee7f7;
+      }
+
+      /* Transform-mode buttons — mesmo visual que prim-btn */
+      .tr-btn {
+        background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1);
+        border-radius: 8px; color: #9ca3af; font-size: 12px; padding: 6px 13px;
+        cursor: pointer; transition: all .15s;
+      }
+      .tr-btn:hover  { background: rgba(255,255,255,.1); color: #e0e0e0; }
+      .tr-btn.active {
+        background: linear-gradient(135deg,rgba(251,191,36,.15),rgba(249,115,22,.15));
+        border-color: #fbbf24; color: #fbbf24;
+      }
+
+      /* Separador */
+      .sep { width: 1px; background: rgba(255,255,255,.08); align-self: stretch; margin: 0 4px; }
+
+      /* Inputs */
+      .ctrl { display: flex; flex-direction: column; gap: 4px; }
+      .ctrl label { font-size: 10px; color: #777; letter-spacing: .08em; text-transform: uppercase; }
+      .ctrl input {
+        width: 68px; background: rgba(255,255,255,.06);
+        border: 1px solid rgba(255,255,255,.1); border-radius: 7px;
+        color: #e0e0e0; font-size: 13px; padding: 5px 9px; outline: none;
+      }
+      .ctrl input:focus { border-color: #6ee7f7; }
+
+      #btn {
+        padding: 7px 20px; background: linear-gradient(135deg, #6ee7f7, #a78bfa);
+        border: none; border-radius: 9px; color: #0f1012; font-weight: 700;
+        font-size: 13px; cursor: pointer; align-self: flex-end;
+      }
+      #btn:disabled { opacity: .5; cursor: default; }
+
+      /* Error log */
+      #error-log {
+        position: fixed; bottom: 110px; left: 50%; transform: translateX(-50%);
+        background: rgba(200,30,30,.9); color: #fff; padding: 10px 18px;
+        border-radius: 8px; font-size: 12px; max-width: 600px;
+        word-break: break-word; display: none; z-index: 100;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="viewport"></div>
+
+    <div id="hud">
+      <h1>CAD MVP · OpenCASCADE</h1>
+      <div id="stats">—</div>
+    </div>
+
+    <div id="error-log"></div>
+
+    <div id="controls">
+      <!-- Selector de tipo -->
+      <div id="prim-selector">
+        <button class="prim-btn active" data-type="box"      id="btn-box">Box</button>
+        <button class="prim-btn"        data-type="cylinder" id="btn-cylinder">Cylinder</button>
+        <button class="prim-btn"        data-type="sphere"   id="btn-sphere">Sphere</button>
+        <button class="prim-btn"        data-type="cone"     id="btn-cone">Cone</button>
+      </div>
+
+      <div class="sep"></div>
+
+      <!-- Controlo de transformação -->
+      <div id="tr-selector" style="display:flex;gap:6px;align-self:center">
+        <button class="tr-btn active" data-mode="translate" title="Mover [T]">↔ Move</button>
+        <button class="tr-btn"        data-mode="rotate"    title="Rodar [R]">↻ Rotate</button>
+        <button class="tr-btn"        data-mode="scale"     title="Escalar [S]">⤢ Scale</button>
+      </div>
+
+      <div class="sep"></div>
+
+      <!-- Inputs dinâmicos por primitiva -->
+      <div id="params-box" class="params-group" style="display:flex;gap:10px">
+        <div class="ctrl"><label>Width</label>  <input id="box-w" type="number" value="50" min="1" step="1"/></div>
+        <div class="ctrl"><label>Height</label> <input id="box-h" type="number" value="50" min="1" step="1"/></div>
+        <div class="ctrl"><label>Depth</label>  <input id="box-d" type="number" value="50" min="1" step="1"/></div>
+      </div>
+      <div id="params-cylinder" class="params-group" style="display:none;gap:10px">
+        <div class="ctrl"><label>Radius</label> <input id="cyl-r" type="number" value="25" min="1" step="1"/></div>
+        <div class="ctrl"><label>Height</label> <input id="cyl-h" type="number" value="60" min="1" step="1"/></div>
+      </div>
+      <div id="params-sphere" class="params-group" style="display:none;gap:10px">
+        <div class="ctrl"><label>Radius</label> <input id="sph-r" type="number" value="30" min="1" step="1"/></div>
+      </div>
+      <div id="params-cone" class="params-group" style="display:none;gap:10px">
+        <div class="ctrl"><label>R Bottom</label> <input id="cone-rb" type="number" value="25" min="1"  step="1"/></div>
+        <div class="ctrl"><label>R Top</label>    <input id="cone-rt" type="number" value="0"  min="0"  step="1"/></div>
+        <div class="ctrl"><label>Height</label>   <input id="cone-h"  type="number" value="60" min="1"  step="1"/></div>
+      </div>
+
+      <div class="sep"></div>
+      <button id="btn">Generate</button>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

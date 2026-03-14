@@ -1,0 +1,26 @@
+{
+  "name": "cad-teste-02",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "predev": "node check-env.cjs",
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "pretauri": "node check-env.cjs",
+    "tauri": "tauri",
+    "tauri:dev": "powershell -NoProfile -Command \"$occt = (Resolve-Path 'src-tauri/third_party/occt/bin').Path; $env:PATH = $occt + ';' + $env:PATH; npx tauri dev\""
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-opener": "^2",
+    "@types/three": "^0.183.1",
+    "three": "^0.183.2"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.3"
+  }
+}

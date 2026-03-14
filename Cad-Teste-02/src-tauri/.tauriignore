@@ -1,0 +1,9 @@
+# .tauriignore — Exclui pastas OCC da vigilância de ficheiros do Tauri dev watcher
+# Isto previne restartes espúrios quando o check-env.cjs lê DLLs de occt/bin
+# (o Windows actualiza timestamps de directórios em acessos de leitura)
+
+# OCCT binaries, includes e libs — READ-ONLY pelo build, não requerem watch
+third_party/occt/
+
+# Ficheiro de compile_commands (gerado pelo CMake/clangd, não relevante)
+compile_commands.json

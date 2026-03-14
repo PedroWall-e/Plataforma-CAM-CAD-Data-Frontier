@@ -1,0 +1,16 @@
+# .cargo/config.toml — Configuração de build/runtime para o crate Tauri
+#
+# PATH: adiciona o diretório de DLLs do OCCT ao PATH de TODOS os processos
+# filhos do cargo (cargo run, cargo test, etc.) na plataforma Windows.
+# Isto garante que o .exe encontra as DLLs do OCCT ao ser executado por
+# `cargo run` durante o desenvolvimento com `npx tauri dev`.
+
+[env]
+# Cada entrada sobrescreve a variável de ambiente para subprocessos do Cargo.
+# Como não podemos "append" ao PATH existente aqui, usamos o `npm run tauri:dev`
+# (package.json) que prepende o occt/bin via PowerShell antes de chamar tauri.
+#
+# O que ESTE ficheiro faz de útil: garante que a build de C++ via `cc` crate
+# encontre os headers MSVC correctamente em ambientes CI ou sem VS Developer CMD.
+CXXFLAGS            = "-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH"
+CFLAGS              = "-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH"

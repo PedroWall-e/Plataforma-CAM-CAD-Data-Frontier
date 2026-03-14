@@ -1,5 +1,0 @@
-C:/Users/Pedro/OneDrive/Área de Trabalho/Plataforma-CAM-CAD-Data-Frontier/build/CMakeFiles/ALL_BUILD.dir
-C:/Users/Pedro/OneDrive/Área de Trabalho/Plataforma-CAM-CAD-Data-Frontier/build/CMakeFiles/ZERO_CHECK.dir
-C:/Users/Pedro/OneDrive/Área de Trabalho/Plataforma-CAM-CAD-Data-Frontier/build/src/App/kernel/CMakeFiles/OCCTKernel.dir
-C:/Users/Pedro/OneDrive/Área de Trabalho/Plataforma-CAM-CAD-Data-Frontier/build/src/App/kernel/CMakeFiles/KernelTest.dir
-C:/Users/Pedro/OneDrive/Área de Trabalho/Plataforma-CAM-CAD-Data-Frontier/build/src/App/kernel/CMakeFiles/ALL_BUILD.dir
