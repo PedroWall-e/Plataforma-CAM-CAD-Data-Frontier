@@ -38,6 +38,22 @@ void remove_shape_c(int shape_id);
 /* Duplica o shape na store e devolve o novo shape_id (≥1) ou -1 em erro. */
 int  clone_shape_c(int shape_id, OcctMesh* out);
 
+/* ── Operações Booleanas ─────────────────────────────────────────────────────── */
+/* Resultado substitui shape idA; shape idB é removido do store.
+ * Retorna idA em sucesso, -1 em erro.                                           */
+int boolean_union_c    (int id_a, int id_b, OcctMesh* out);
+int boolean_cut_c      (int id_a, int id_b, OcctMesh* out);
+int boolean_intersect_c(int id_a, int id_b, OcctMesh* out);
+
+/* ── Fillet & Chamfer ────────────────────────────────────────────────────────── */
+/* Aplica a TODAS as arestas do shape. Retorna shape_id ou -1.                   */
+int fillet_all_c (int shape_id, float radius, OcctMesh* out);
+int chamfer_all_c(int shape_id, float dist,   OcctMesh* out);
+
+/* ── Shell (Casca oca) ───────────────────────────────────────────────────────── */
+/* Remove a face superior (max Y) e aplica espessura inward. Retorna shape_id.  */
+int shell_c(int shape_id, float thickness, OcctMesh* out);
+
 /* ── Memoria ─────────────────────────────────────────────────────────────────── */
 void free_occt_mesh(OcctMesh* mesh);
 

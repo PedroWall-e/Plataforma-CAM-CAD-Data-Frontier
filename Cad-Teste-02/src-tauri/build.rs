@@ -37,11 +37,16 @@ fn main() {
         "TKPrim",
         "TKMesh",
         "TKShHealing",
+        // Fase 2: Booleanas, Fillet/Chamfer, Shell
+        "TKBool",    // BRepAlgoAPI_Fuse / Cut / Common
+        "TKFillet",  // BRepFilletAPI_MakeFillet / MakeChamfer
+        "TKOffset",  // BRepOffsetAPI_MakeThickSolid
     ] {
         println!("cargo:rustc-link-lib={}", lib);
     }
 
     // ── Triggers de recompilação ──────────────────────────────────────────────
+    println!("cargo:rerun-if-changed=build.rs"); // rebuild quando as libs mudam
     println!("cargo:rerun-if-changed=third_party/occt_wrapper/occt_bridge_c.h");
     println!("cargo:rerun-if-changed=third_party/occt_wrapper/occt_bridge_c.cpp");
     println!("cargo:rerun-if-changed=third_party/occt_wrapper/occt_wrapper.h");

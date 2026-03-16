@@ -14,3 +14,8 @@
 # encontre os headers MSVC correctamente em ambientes CI ou sem VS Developer CMD.
 CXXFLAGS            = "-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH"
 CFLAGS              = "-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH"
+
+[build]
+# ⚠️ Build artifacts fora do OneDrive — evita file-locking durante sync
+# Isso resolve o LNK2019 causado por OneDrive bloqueando occt_bridge.lib
+target-dir = "C:/cargo-target/cad-cad"

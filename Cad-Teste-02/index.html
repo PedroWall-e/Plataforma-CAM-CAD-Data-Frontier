@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -11,20 +11,50 @@
 
     <div id="hud">
       <h1>CAD MVP · OpenCASCADE</h1>
-      <div style="display:flex;gap:12px;align-items:center">
+      <div style="display:flex;gap:10px;align-items:center">
         <div id="stats">—</div>
-        <!-- Selector de unidades -->
-        <div id="unit-selector">
-          <button class="unit-btn active" data-unit="mm">mm</button>
-          <button class="unit-btn"         data-unit="cm">cm</button>
+        <button id="btn-grid-toggle" title="Configuração do Grid">⊞ Grid</button>
+      </div>
+      <!-- Painel retrátil do grid -->
+      <div id="grid-config" style="display:none">
+        <div class="grid-row">
+          <span class="info-lbl">Unidade</span>
+          <div id="unit-selector" style="display:flex;gap:4px">
+            <button class="unit-btn active" data-unit="mm">mm</button>
+            <button class="unit-btn"        data-unit="cm">cm</button>
+          </div>
+        </div>
+        <div class="grid-row">
+          <span class="info-lbl">Célula</span>
+          <input id="grid-cell"  type="number" value="10"   min="1"   max="1000"  step="1"   title="Tamanho de cada célula (mm)" />
+        </div>
+        <div class="grid-row">
+          <span class="info-lbl">Total</span>
+          <input id="grid-total" type="number" value="1000" min="100" max="10000" step="100" title="Tamanho total do grid (mm)" />
+        </div>
+        <div class="grid-row two-col">
+          <span class="info-lbl">Origem</span>
+          <input id="grid-ox" type="number" value="0" step="1" title="Desl. X" placeholder="X" />
+          <input id="grid-oz" type="number" value="0" step="1" title="Desl. Z" placeholder="Z" />
+        </div>
+        <div class="grid-row">
+          <span class="info-lbl" data-i18n="language">Língua</span>
+          <button id="btn-lang">PT-BR</button>
+        </div>
+        <div class="grid-row">
+          <span class="info-lbl" data-i18n="theme">Tema</span>
+          <button id="btn-theme">☀ Claro</button>
+        </div>
+        <div class="grid-row">
+          <span class="info-lbl"></span>
+          <button id="btn-axes-toggle" data-i18n="xyzVisible">XYZ 👁 visível</button>
         </div>
       </div>
-    </div>
-
-    <!-- Painel de info do objeto selecionado -->
-    <div id="obj-info">
-      <div class="info-row"><span class="info-lbl">Pos</span><span id="info-pos">—</span></div>
-      <div class="info-row"><span class="info-lbl">Size</span><span id="info-size">—</span></div>
+      <!-- Pos e Size sempre visíveis, abaixo do grid-config -->
+      <div id="obj-info-hud">
+        <div class="info-row"><span class="info-lbl">Pos</span><span id="info-pos">—</span></div>
+        <div class="info-row"><span class="info-lbl">Size</span><span id="info-size">—</span></div>
+      </div>
     </div>
 
     <!-- Input overlay para valor exato de transform -->
@@ -35,15 +65,29 @@
       <button id="transform-input-cancel">✕</button>
     </div>
 
+    <!-- ViewCube 3D — overlay de clique/drag (renderizado pelo main renderer via scissor) -->
+    <div id="vc-overlay" title="Clique para alinhar câmera · Arraste para orbitar"></div>
+
+    <!-- Transform Input Box (TIB) — aparece junto ao gizmo durante drag -->
+    <div id="tib">
+      <div id="tib-header">
+        <span id="tib-axis-dot"></span>
+        <span id="tib-label">Δ X (mm)</span>
+        <button id="tib-reset" title="Retornar ao zero / valor original">↩ 0</button>
+      </div>
+      <input id="tib-input" type="number" step="0.01" placeholder="0" />
+      <div id="tib-hint">Tab = próx. eixo &nbsp;·&nbsp; Enter = aplicar &nbsp;·&nbsp; Esc = fechar</div>
+    </div>
+
     <div id="error-log"></div>
 
     <div id="controls">
       <!-- Selector de tipo -->
       <div id="prim-selector">
-        <button class="prim-btn active" data-type="box"      id="btn-box">Box</button>
-        <button class="prim-btn"        data-type="cylinder" id="btn-cylinder">Cylinder</button>
-        <button class="prim-btn"        data-type="sphere"   id="btn-sphere">Sphere</button>
-        <button class="prim-btn"        data-type="cone"     id="btn-cone">Cone</button>
+        <button class="prim-btn active" data-type="box"      id="btn-box"      data-i18n="box">Caixa</button>
+        <button class="prim-btn"        data-type="cylinder" id="btn-cylinder" data-i18n="cylinder">Cilindro</button>
+        <button class="prim-btn"        data-type="sphere"   id="btn-sphere"   data-i18n="sphere">Esfera</button>
+        <button class="prim-btn"        data-type="cone"     id="btn-cone"     data-i18n="cone">Cone</button>
       </div>
 
       <div class="sep"></div>
@@ -59,10 +103,10 @@
 
       <!-- Face Snap Mode -->
       <div id="face-snap-row" style="display:flex;gap:8px;align-items:center;align-self:center">
-        <button id="btn-face-snap" title="Selecione uma face de cada objeto para os grudar">🧲 Face Snap</button>
+        <button id="btn-face-snap" title="Selecione uma face de referencia e depois a face alvo" data-i18n="faceSnap">🧲 Encaixe de Face</button>
         <select id="snap-align" title="Modo de alinhamento do Face Snap">
-          <option value="face">Face ↔ Face</option>
-          <option value="center">Centro ↔ Centro</option>
+          <option value="face" data-i18n="faceFace">Face ↔ Face</option>
+          <option value="center" data-i18n="centerCenter">Centro ↔ Centro</option>
         </select>
         <span id="snap-status"></span>
       </div>
@@ -71,21 +115,21 @@
 
       <!-- Inputs dinâmicos por primitiva -->
       <div id="params-box" class="params-group" style="display:flex;gap:10px">
-        <div class="ctrl"><label>Width</label>  <input id="box-w" type="number" value="50" min="1" step="1"/></div>
-        <div class="ctrl"><label>Height</label> <input id="box-h" type="number" value="50" min="1" step="1"/></div>
-        <div class="ctrl"><label>Depth</label>  <input id="box-d" type="number" value="50" min="1" step="1"/></div>
+        <div class="ctrl"><label><span data-i18n="width">Width</span> <span class="unit-lbl">(mm)</span></label>  <input id="box-w" type="number" value="50" min="1" step="1"/></div>
+        <div class="ctrl"><label><span data-i18n="height">Height</span> <span class="unit-lbl">(mm)</span></label> <input id="box-h" type="number" value="50" min="1" step="1"/></div>
+        <div class="ctrl"><label><span data-i18n="depth">Depth</span> <span class="unit-lbl">(mm)</span></label>  <input id="box-d" type="number" value="50" min="1" step="1"/></div>
       </div>
       <div id="params-cylinder" class="params-group" style="display:none;gap:10px">
-        <div class="ctrl"><label>Radius</label> <input id="cyl-r" type="number" value="25" min="1" step="1"/></div>
-        <div class="ctrl"><label>Height</label> <input id="cyl-h" type="number" value="60" min="1" step="1"/></div>
+        <div class="ctrl"><label><span data-i18n="radius">Radius</span> <span class="unit-lbl">(mm)</span></label> <input id="cyl-r" type="number" value="25" min="1" step="1"/></div>
+        <div class="ctrl"><label><span data-i18n="height">Height</span> <span class="unit-lbl">(mm)</span></label> <input id="cyl-h" type="number" value="60" min="1" step="1"/></div>
       </div>
       <div id="params-sphere" class="params-group" style="display:none;gap:10px">
-        <div class="ctrl"><label>Radius</label> <input id="sph-r" type="number" value="30" min="1" step="1"/></div>
+        <div class="ctrl"><label><span data-i18n="radius">Radius</span> <span class="unit-lbl">(mm)</span></label> <input id="sph-r" type="number" value="30" min="1" step="1"/></div>
       </div>
       <div id="params-cone" class="params-group" style="display:none;gap:10px">
-        <div class="ctrl"><label>R Bottom</label> <input id="cone-rb" type="number" value="25" min="1"  step="1"/></div>
-        <div class="ctrl"><label>R Top</label>    <input id="cone-rt" type="number" value="0"  min="0"  step="1"/></div>
-        <div class="ctrl"><label>Height</label>   <input id="cone-h"  type="number" value="60" min="1"  step="1"/></div>
+        <div class="ctrl"><label><span data-i18n="rBottom">R Bottom</span> <span class="unit-lbl">(mm)</span></label> <input id="cone-rb" type="number" value="25" min="1"  step="1"/></div>
+        <div class="ctrl"><label><span data-i18n="rTop">R Top</span>    <span class="unit-lbl">(mm)</span></label> <input id="cone-rt" type="number" value="0"  min="0"  step="1"/></div>
+        <div class="ctrl"><label><span data-i18n="height">Height</span>   <span class="unit-lbl">(mm)</span></label> <input id="cone-h"  type="number" value="60" min="1"  step="1"/></div>
       </div>
 
       <div class="sep"></div>
@@ -100,11 +144,95 @@
       </div>
 
       <div class="sep"></div>
-      <button id="btn">Generate</button>
-      <button id="btn-floor" title="Assentar o objeto no grid (Y=0)">⬇ Floor</button>
-      <button id="btn-delete" title="Apagar objeto selecionado [Del]">🗑 Delete</button>
+      <button id="btn" data-i18n="generate">Generate</button>
+      <button id="btn-floor" title="Assentar o objeto no grid (Y=0)" data-i18n="floor">⬇ Floor</button>
+      <button id="btn-delete" title="Apagar objeto selecionado [Del]" data-i18n="deleteLbl">🗑 Delete</button>
     </div>
 
     <script type="module" src="/src/main.ts"></script>
+
+    <!-- Barra de navegacao inferior -->
+    <div id="nav-bar">
+      <div class="nav-group">
+        <span class="nav-lbl" data-i18n="zoom">Zoom</span>
+        <button class="nav-btn" id="nb-zoom-out" title="Diminuir zoom">&#x2212;</button>
+        <input type="range" id="nb-zoom-slider" min="10" max="500" value="120" step="5" title="Zoom" />
+        <button class="nav-btn" id="nb-zoom-in"  title="Aumentar zoom">&#x2B;</button>
+      </div>
+      <div class="nav-sep"></div>
+      <div class="nav-group">
+        <span class="nav-lbl" data-i18n="orbit">Giro</span>
+        <button class="nav-btn" id="nb-orb-l" title="Girar esquerda">◀</button>
+        <button class="nav-btn" id="nb-orb-r" title="Girar direita">▶</button>
+        <button class="nav-btn" id="nb-orb-u" title="Girar cima">▲</button>
+        <button class="nav-btn" id="nb-orb-d" title="Girar baixo">▼</button>
+      </div>
+      <div class="nav-sep"></div>
+      <div class="nav-group">
+        <span class="nav-lbl" data-i18n="pan">Pan</span>
+        <button class="nav-btn" id="nb-pan-l" title="Mover esquerda">↤</button>
+        <button class="nav-btn" id="nb-pan-r" title="Mover direita">↦</button>
+        <button class="nav-btn" id="nb-pan-u" title="Mover cima">↥</button>
+        <button class="nav-btn" id="nb-pan-d" title="Mover baixo">↧</button>
+      </div>
+      <div class="nav-sep"></div>
+      <button class="nav-btn nav-home" id="nb-home" title="Vista inicial">⌂ Home</button>
+    </div>
+
+  <!-- ═══ Painel lateral retrátil — Operações de Modelagem (Fase 2) ═══════════ -->
+  <button id="ops-tab" title="Operações de Modelagem">🔧</button>
+
+  <aside id="ops-panel" aria-label="Operações de Modelagem">
+    <header class="ops-header">
+      <span>⚙ Operações</span>
+      <button id="ops-close" title="Fechar painel">✕</button>
+    </header>
+
+    <!-- ── Booleanas ────────────────────────────────────────────────── -->
+    <section class="ops-section">
+      <button class="ops-toggle" aria-expanded="true">⊕⊖⊗  Booleanas</button>
+      <div class="ops-body">
+        <p class="ops-hint">Shift+Click em 2 objetos para selecionar A (azul) e B (vermelho)</p>
+        <div id="boolean-row" class="ops-btns">
+          <button id="btn-union"     class="bool-btn" title="A ∪ B — funde">⊕ Unir</button>
+          <button id="btn-cut"       class="bool-btn" title="A − B — subtrai">⊖ Subtrair</button>
+          <button id="btn-intersect" class="bool-btn" title="A ∩ B — interseção">⊗ Intersetar</button>
+        </div>
+        <span id="bool-hint" class="ops-hint" style="display:none">A = 1º · B = 2º</span>
+      </div>
+    </section>
+
+    <!-- ── Arestas ──────────────────────────────────────────────────── -->
+    <section class="ops-section">
+      <button class="ops-toggle" aria-expanded="true">◉◈  Arestas</button>
+      <div class="ops-body">
+        <p class="ops-hint">Selecione um objeto, ajuste o valor e aplique</p>
+        <div class="ops-row">
+          <label class="ops-label">R / Dist (mm)</label>
+          <input id="fillet-radius" type="number" value="3" min="0.1" step="0.5" class="ops-input"/>
+        </div>
+        <div class="ops-btns">
+          <button id="btn-fillet"  title="Arredondar arestas — BRepFilletAPI_MakeFillet">◉ Fillet</button>
+          <button id="btn-chamfer" title="Chanfrar arestas — BRepFilletAPI_MakeChamfer">◈ Chanfro</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Sólido / Shell ───────────────────────────────────────────── -->
+    <section class="ops-section">
+      <button class="ops-toggle" aria-expanded="true">⬡  Shell</button>
+      <div class="ops-body">
+        <p class="ops-hint">Cria casca oca removendo a face superior</p>
+        <div class="ops-row">
+          <label class="ops-label">Espessura (mm)</label>
+          <input id="shell-thickness" type="number" value="3" min="0.1" step="0.5" class="ops-input"/>
+        </div>
+        <div class="ops-btns">
+          <button id="btn-shell" title="Casca oca — BRepOffsetAPI_MakeThickSolid">⬡ Aplicar Shell</button>
+        </div>
+      </div>
+    </section>
+  </aside>
+
   </body>
 </html>

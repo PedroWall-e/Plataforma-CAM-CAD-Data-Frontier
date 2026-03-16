@@ -1,41 +1,115 @@
 /* src/styles.css — CAD MVP styles */
 
+/* ── Tema: variáveis CSS ─────────────────────────────────────────────────── */
+:root {
+  --bg:       #0f1012; --bg2:     rgba(10,12,15,.88); --fg:  #e0e0e0;
+  --border:   rgba(255,255,255,.07); --accent: #6ee7f7; --accent2: #a78bfa;
+  --muted:    #8899aa; --input-bg: rgba(255,255,255,.06);
+}
+body.light-theme {
+  --bg:       #f0f2f5; --bg2:     rgba(240,242,245,.92); --fg:  #1a1d22;
+  --border:   rgba(0,0,0,.12); --accent: #1877cc; --accent2: #7c3aed;
+  --muted:    #556677; --input-bg: rgba(0,0,0,.04);
+}
+body { background: var(--bg); overflow: hidden; font-family: system-ui, sans-serif; color: var(--fg); }
+
 /* ── Reset ─────────────────────────────────────────────────────────────────── */
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { background: #0f1012; overflow: hidden; font-family: system-ui, sans-serif; }
 #viewport { width: 100vw; height: 100vh; }
+
+/* ── Barra de navegação inferior ─────────────────────────────────────────── */
+#nav-bar {
+  position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 8px; padding: 5px 16px;
+  background: var(--bg2); border: 1px solid var(--border); border-bottom: none;
+  border-radius: 12px 12px 0 0; backdrop-filter: blur(14px);
+  z-index: 20; pointer-events: all; user-select: none;
+}
+.nav-group { display: flex; align-items: center; gap: 4px; }
+.nav-lbl   { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing:.06em; min-width:28px; }
+.nav-sep   { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+.nav-btn {
+  width: 26px; height: 26px; border-radius: 6px; font-size: 12px;
+  background: var(--input-bg); border: 1px solid var(--border);
+  color: var(--fg); cursor: pointer; transition: all .12s;
+  display: flex; align-items: center; justify-content: center;
+}
+.nav-btn:hover { background: rgba(110,231,247,.18); color: var(--accent); border-color: var(--accent); }
+.nav-home { width: auto; padding: 0 10px; font-size: 11px; }
+#nb-zoom-slider {
+  width: 90px; accent-color: var(--accent); cursor: pointer;
+  height: 4px;
+}
 
 /* ── HUD ───────────────────────────────────────────────────────────────────── */
 #hud {
-  position: fixed; top: 0; left: 0; right: 0;
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 14px 22px;
-  background: linear-gradient(180deg, rgba(15,16,18,.92) 0%, transparent 100%);
-  pointer-events: none;
+  position: fixed; top: 0; left: 0;
+  display: inline-flex; flex-direction: column; gap: 4px;
+  padding: 12px 18px 10px;
+  background: var(--bg2); border-bottom-right-radius: 12px;
+  border: 1px solid var(--border); border-top: none; border-left: none;
+  backdrop-filter: blur(12px);
+  pointer-events: none; z-index: 20;
+  max-width: 320px;
 }
 #hud h1 {
-  font-size: 14px; font-weight: 600; letter-spacing: .06em;
+  font-size: 13px; font-weight: 600; letter-spacing: .06em;
   background: linear-gradient(90deg, #6ee7f7, #a78bfa);
   -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
 }
-#stats { font-size: 11px; color: #555; }
+#stats { font-size: 10px; color: var(--muted); }
+#hud > div:first-of-type {
+  display: flex; align-items: center; gap: 10px;
+}
+#hud button, #hud input, #hud select,
+#unit-selector, #btn-grid-toggle, #grid-config { pointer-events: all; }
+.info-lbl { font-size: 10px; color: var(--muted); }
+
+/* Grid Config Panel */
+#grid-config {
+  margin-top: 6px; padding: 8px 10px;
+  background: var(--input-bg); border: 1px solid var(--border);
+  border-radius: 8px; display: flex; flex-direction: column; gap: 5px;
+  min-width: 0; width: 100%;
+}
+.grid-row {
+  display: grid;
+  grid-template-columns: 48px 1fr;  /* label col fixo + conteudo flex */
+  align-items: center; gap: 6px;
+}
+.grid-row .info-lbl {
+  text-align: right; white-space: nowrap; flex-shrink: 0;
+}
+.grid-row input {
+  width: 100%; min-width: 0; background: var(--input-bg); border: 1px solid var(--border);
+  border-radius: 5px; color: var(--fg); font-size: 11px; padding: 3px 6px; outline: none;
+}
+.grid-row input:focus { border-color: var(--accent); }
+/* Linhas com 2 inputs: col extra */
+.grid-row.two-col { grid-template-columns: 48px 1fr 1fr; }
+.grid-row button { flex: 1; font-size: 10px; }
+#btn-grid-toggle {
+  font-size: 10px; padding: 2px 8px;
+  color: var(--muted); border-color: var(--border);
+}
 
 /* ── Painel de controlo ────────────────────────────────────────────────────── */
 #controls {
-  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
   display: flex; gap: 10px; align-items: flex-end;
-  background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08);
-  border-radius: 14px; padding: 16px 22px; backdrop-filter: blur(12px);
-  flex-wrap: wrap; justify-content: center; max-width: 90vw;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 14px; padding: 12px 18px; backdrop-filter: blur(12px);
+  flex-wrap: wrap; justify-content: center; max-width: 70vw;
+  z-index: 18; pointer-events: all;
 }
 
 /* ── Base button (shared por prim-btn, tr-btn, face-snap, qualquer botão sem ID custom) */
 button {
-  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1);
-  border-radius: 8px; color: #9ca3af; font-size: 12px; padding: 6px 13px;
+  background: var(--input-bg); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--muted); font-size: 12px; padding: 6px 13px;
   cursor: pointer; transition: all .15s; font-family: inherit;
 }
-button:hover { background: rgba(255,255,255,.1); color: #e0e0e0; }
+button:hover { background: var(--input-bg); color: var(--fg); }
 
 /* ── Selector de primitiva ──────────────────────────────────────────────────── */
 #prim-selector { display: flex; gap: 6px; align-self: center; }
@@ -52,17 +126,29 @@ button:hover { background: rgba(255,255,255,.1); color: #e0e0e0; }
 }
 
 /* ── Separador ──────────────────────────────────────────────────────────────── */
-.sep { width: 1px; background: rgba(255,255,255,.08); align-self: stretch; margin: 0 4px; }
+.sep { width: 1px; background: var(--border); align-self: stretch; margin: 0 4px; }
 
 /* ── Inputs ─────────────────────────────────────────────────────────────────── */
 .ctrl { display: flex; flex-direction: column; gap: 4px; }
-.ctrl label { font-size: 10px; color: #777; letter-spacing: .08em; text-transform: uppercase; }
+.ctrl label { font-size: 10px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
 .ctrl input {
-  width: 68px; background: rgba(255,255,255,.06);
-  border: 1px solid rgba(255,255,255,.1); border-radius: 7px;
-  color: #e0e0e0; font-size: 13px; padding: 5px 9px; outline: none;
+  width: 68px; background: var(--input-bg);
+  border: 1px solid var(--border); border-radius: 7px;
+  color: var(--fg); font-size: 13px; padding: 5px 9px; outline: none;
 }
-.ctrl input:focus { border-color: #6ee7f7; }
+.ctrl input:focus { border-color: var(--accent); }
+
+/* ── Obj info (Pos/Size) — sempre visível abaixo do HUD ─────────────────────── */
+#obj-info-hud {
+  margin-top: 4px; padding: 6px 8px;
+  background: var(--input-bg); border: 1px solid var(--border);
+  border-radius: 7px;
+}
+.info-row {
+  display: flex; justify-content: space-between; gap: 8px;
+  font-size: 11px; color: var(--muted); padding: 1px 0;
+}
+.info-row span:last-child { color: var(--fg); font-variant-numeric: tabular-nums; }
 
 /* ── Botão Generate ─────────────────────────────────────────────────────────── */
 #btn {
@@ -136,3 +222,167 @@ select option { background: #1a1c20; color: #e0e0e0; }
 /* ── Floor button ────────────────────────────────────────────────────────────── */
 #btn-floor { color: #60a5fa; border-color: rgba(96,165,250,.35); }
 #btn-floor:hover { background: rgba(96,165,250,.15); color: #93c5fd; }
+
+/* ── Grid Config Panel (retrátil, dentro do HUD) ───────────────────────────── */
+#grid-config {
+  margin-top: 10px; border-top: 1px solid rgba(255,255,255,.08);
+  padding-top: 8px; display: flex; flex-direction: column; gap: 5px;
+}
+.grid-row {
+  display: flex; align-items: center; gap: 6px;
+}
+.grid-row input {
+  width: 58px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1);
+  border-radius: 5px; color: #e0e0e0; font-size: 11px; padding: 3px 6px; outline: none;
+}
+.grid-row input:focus { border-color: #6ee7f7; }
+#btn-grid-toggle {
+  font-size: 11px; padding: 2px 8px; color: #9ca3af;
+  border-color: rgba(255,255,255,.15);
+}
+
+/* ── TIB Reset button ────────────────────────────────────────────────────────── */
+#tib-reset {
+  margin-left: auto; font-size: 10px; padding: 2px 7px;
+  color: #6ee7f7; border-color: rgba(110,231,247,.35);
+  border-radius: 5px; cursor: pointer;
+}
+#tib-reset:hover { background: rgba(110,231,247,.15); }
+#tib-header { display: flex; align-items: center; gap: 7px; }
+
+/* ── Transform Input Box (TIB) ───────────────────────────────────────────────── */
+#tib {
+  position: fixed; display: none; flex-direction: column; gap: 6px;
+  background: rgba(8,10,13,.96); border: 1.5px solid rgba(110,231,247,.55);
+  border-radius: 10px; padding: 10px 14px; z-index: 300;
+  backdrop-filter: blur(14px); box-shadow: 0 0 28px rgba(110,231,247,.18);
+  pointer-events: all; min-width: 180px;
+}
+#tib.show { animation: tibIn .12s ease-out; }
+@keyframes tibIn { from { opacity:0; transform:scale(.92); } to { opacity:1; transform:scale(1); } }
+
+#tib-header { display: flex; align-items: center; gap: 7px; }
+#tib-axis-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #6ee7f7;   /* cor muda via JS */
+  flex-shrink: 0;
+}
+#tib-label { font-size: 10px; color: #6ee7f7; text-transform: uppercase; letter-spacing: .1em; }
+
+#tib-input {
+  width: 100%; font-size: 18px; font-weight: 700; color: #fff;
+  background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.12);
+  border-radius: 7px; padding: 6px 10px; outline: none; transition: border-color .15s;
+}
+#tib-input:focus { border-color: #6ee7f7; }
+
+#tib-hint { font-size: 9px; color: #444; text-align: center; }
+
+/* Cores do dot por eixo — dot tem background, label tem apenas color de texto */
+#tib.axis-x #tib-axis-dot { background: #ff4444; }
+#tib.axis-x #tib-label    { color: #ff7777; }
+#tib.axis-x #tib-input:focus { border-color: #ff6666; }
+#tib.axis-y #tib-axis-dot { background: #44cc44; }
+#tib.axis-y #tib-label    { color: #66ff66; }
+#tib.axis-y #tib-input:focus { border-color: #66ff66; }
+#tib.axis-z #tib-axis-dot { background: #4488ff; }
+#tib.axis-z #tib-label    { color: #6699ff; }
+#tib.axis-z #tib-input:focus { border-color: #66aaff; }
+
+/* ── Unit label next to primitive inputs ──────────────────────────────────── */
+.unit-lbl { color: #6ee7f7; font-size: 9px; opacity: .8; }
+
+/* ── ViewCube overlay (eventos de mouse; renderizado no main renderer via scissor) ── */
+#vc-overlay {
+  position: fixed; top: 14px; right: 14px; z-index: 25;
+  width: 130px; height: 130px;
+  border-radius: 14px; cursor: grab;
+  pointer-events: all;
+  background: transparent;
+  /* Moldura visivel para delimitar o ViewCube */
+  border: 1px solid rgba(110,231,247,0.35);
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.4), 0 6px 24px rgba(0,0,0,0.5);
+  outline: none;
+}
+#vc-overlay:active { cursor: grabbing; }
+
+/* ═══ Painel lateral retrátil — Operações de Modelagem ═══════════════════════ */
+
+#ops-tab {
+  position: fixed; left: 0; top: 50%; transform: translateY(-50%);
+  z-index: 30; width: 36px; height: 36px;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-left: none; border-radius: 0 8px 8px 0;
+  font-size: 16px; padding: 0; cursor: pointer; color: var(--fg);
+  transition: background .15s, transform .15s;
+  display: flex; align-items: center; justify-content: center;
+}
+#ops-tab:hover { background: var(--input-bg); transform: translateY(-50%) translateX(2px); }
+
+#ops-panel {
+  position: fixed; left: 0; top: 50%; transform: translateY(-50%) translateX(-105%);
+  z-index: 29; width: 240px; max-height: 80vh; overflow-y: auto;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 0 14px 14px 0; backdrop-filter: blur(14px);
+  display: flex; flex-direction: column; gap: 0;
+  transition: transform .25s cubic-bezier(.22,.68,0,1.2);
+  box-shadow: 4px 0 24px rgba(0,0,0,.4);
+}
+#ops-panel.open { transform: translateY(-50%) translateX(0); }
+
+/* Header do painel */
+.ops-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+  font-size: 12px; font-weight: 600; color: var(--fg);
+  background: linear-gradient(90deg, rgba(110,231,247,.07), rgba(167,139,250,.07));
+}
+.ops-header button {
+  padding: 2px 7px; font-size: 10px; color: var(--muted);
+}
+
+/* Sections */
+.ops-section { border-bottom: 1px solid var(--border); }
+.ops-section:last-child { border-bottom: none; }
+
+/* Sub-toggle (cabeçalho de cada seção) */
+.ops-toggle {
+  width: 100%; text-align: left; padding: 8px 14px;
+  font-size: 11px; font-weight: 600; letter-spacing: .04em;
+  color: var(--accent); background: transparent; border: none;
+  border-radius: 0; display: flex; justify-content: space-between;
+}
+.ops-toggle::after { content: '▾'; font-size: 10px; transition: transform .2s; }
+.ops-toggle[aria-expanded="false"]::after { transform: rotate(-90deg); }
+
+/* Body colapsável */
+.ops-body {
+  padding: 8px 14px 12px; display: flex; flex-direction: column; gap: 8px;
+  overflow: hidden; transition: max-height .2s ease;
+}
+.ops-body.collapsed { max-height: 0 !important; padding: 0 14px; }
+
+.ops-hint {
+  font-size: 9px; color: var(--muted); line-height: 1.4; margin: 0;
+}
+.ops-row {
+  display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px;
+}
+.ops-label { font-size: 10px; color: var(--muted); }
+.ops-input {
+  width: 64px; background: var(--input-bg); border: 1px solid var(--border);
+  border-radius: 5px; color: var(--fg); font-size: 11px; padding: 3px 6px; outline: none;
+}
+.ops-input:focus { border-color: var(--accent); }
+.ops-btns {
+  display: flex; flex-wrap: wrap; gap: 5px;
+}
+.ops-btns button {
+  flex: 1; min-width: 60px; font-size: 11px; padding: 5px 8px;
+}
+.bool-btn { background: rgba(110,231,247,.08); border-color: rgba(110,231,247,.25); color: #6ee7f7; }
+.bool-btn:hover { background: rgba(110,231,247,.18); }
+
+/* Light theme overrides */
+body.light-theme #ops-tab  { background: rgba(255,255,255,.9); }
+body.light-theme .bool-btn { background: rgba(0,100,200,.08); border-color: rgba(0,100,200,.3); color: #005bcc; }

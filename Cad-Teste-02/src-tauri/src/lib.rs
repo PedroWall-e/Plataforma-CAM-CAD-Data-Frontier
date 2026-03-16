@@ -28,6 +28,18 @@ unsafe extern "C" {
     fn remove_shape_c   (shape_id: i32);
     fn clone_shape_c    (shape_id: i32, out: *mut OcctMesh) -> i32;
 
+    // Booleanos (resultado em idA; idB é removido do store)
+    fn boolean_union_c    (id_a: i32, id_b: i32, out: *mut OcctMesh) -> i32;
+    fn boolean_cut_c      (id_a: i32, id_b: i32, out: *mut OcctMesh) -> i32;
+    fn boolean_intersect_c(id_a: i32, id_b: i32, out: *mut OcctMesh) -> i32;
+
+    // Fillet & Chamfer (todas as arestas)
+    fn fillet_all_c (shape_id: i32, radius: f32, out: *mut OcctMesh) -> i32;
+    fn chamfer_all_c(shape_id: i32, dist:   f32, out: *mut OcctMesh) -> i32;
+
+    // Shell (casca oca)
+    fn shell_c(shape_id: i32, thickness: f32, out: *mut OcctMesh) -> i32;
+
     fn free_occt_mesh(mesh: *mut OcctMesh);
 }
 
@@ -170,6 +182,76 @@ fn clone_shape(shape_id: i32) -> Result<ShapeMesh, String> {
     }
 }
 
+// ─── Operações Booleanas ──────────────────────────────────────────────────────
+
+/// Union: A ∪ B → resultado substitui A, B é removido. Devolve ShapeMesh de A.
+#[tauri::command]
+fn boolean_union(id_a: i32, id_b: i32) -> Result<ShapeMesh, String> {
+    unsafe {
+        let mut raw = OcctMesh::empty();
+        let id = boolean_union_c(id_a, id_b, &mut raw);
+        if id < 0 { return Err(format!("boolean_union falhou (A={}, B={})", id_a, id_b)); }
+        Ok(ShapeMesh { shape_id: id, mesh: collect_mesh(&mut raw)? })
+    }
+}
+
+/// Cut: A − B → resultado substitui A, B é removido. Devolve ShapeMesh de A.
+#[tauri::command]
+fn boolean_cut(id_a: i32, id_b: i32) -> Result<ShapeMesh, String> {
+    unsafe {
+        let mut raw = OcctMesh::empty();
+        let id = boolean_cut_c(id_a, id_b, &mut raw);
+        if id < 0 { return Err(format!("boolean_cut falhou (A={}, B={})", id_a, id_b)); }
+        Ok(ShapeMesh { shape_id: id, mesh: collect_mesh(&mut raw)? })
+    }
+}
+
+/// Intersect: A ∩ B → resultado substitui A, B é removido. Devolve ShapeMesh de A.
+#[tauri::command]
+fn boolean_intersect(id_a: i32, id_b: i32) -> Result<ShapeMesh, String> {
+    unsafe {
+        let mut raw = OcctMesh::empty();
+        let id = boolean_intersect_c(id_a, id_b, &mut raw);
+        if id < 0 { return Err(format!("boolean_intersect falhou (A={}, B={})", id_a, id_b)); }
+        Ok(ShapeMesh { shape_id: id, mesh: collect_mesh(&mut raw)? })
+    }
+}
+
+// ─── Fillet & Chamfer ─────────────────────────────────────────────────────────
+
+/// Arredonda todas as arestas do shape com o raio dado.
+#[tauri::command]
+fn fillet_shape(shape_id: i32, radius: f32) -> Result<ShapeMesh, String> {
+    unsafe {
+        let mut raw = OcctMesh::empty();
+        let id = fillet_all_c(shape_id, radius, &mut raw);
+        if id < 0 { return Err(format!("fillet_shape falhou (id={}, r={})", shape_id, radius)); }
+        Ok(ShapeMesh { shape_id: id, mesh: collect_mesh(&mut raw)? })
+    }
+}
+
+/// Chanfra todas as arestas do shape com a distância dada.
+#[tauri::command]
+fn chamfer_shape(shape_id: i32, dist: f32) -> Result<ShapeMesh, String> {
+    unsafe {
+        let mut raw = OcctMesh::empty();
+        let id = chamfer_all_c(shape_id, dist, &mut raw);
+        if id < 0 { return Err(format!("chamfer_shape falhou (id={}, d={})", shape_id, dist)); }
+        Ok(ShapeMesh { shape_id: id, mesh: collect_mesh(&mut raw)? })
+    }
+}
+
+/// Cria casca oca (remove face superior, aplica espessura inward).
+#[tauri::command]
+fn shell_shape(shape_id: i32, thickness: f32) -> Result<ShapeMesh, String> {
+    unsafe {
+        let mut raw = OcctMesh::empty();
+        let id = shell_c(shape_id, thickness, &mut raw);
+        if id < 0 { return Err(format!("shell_shape falhou (id={}, t={})", shape_id, thickness)); }
+        Ok(ShapeMesh { shape_id: id, mesh: collect_mesh(&mut raw)? })
+    }
+}
+
 // ─── Bootstrap ────────────────────────────────────────────────────────────────
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -178,6 +260,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             create_box, create_cylinder, create_sphere, create_cone,
             transform_shape, delete_shape, clone_shape,
+            boolean_union, boolean_cut, boolean_intersect,
+            fillet_shape, chamfer_shape, shell_shape,
         ])
         .run(tauri::generate_context!())
         .expect("Erro ao iniciar a aplicação Tauri");

@@ -27,6 +27,17 @@ const txInputLabel = document.getElementById('transform-input-label') as HTMLLab
 const txInputVal   = document.getElementById('transform-input-val')   as HTMLInputElement;
 const txInputOk    = document.getElementById('transform-input-ok')    as HTMLButtonElement;
 const txInputCancel= document.getElementById('transform-input-cancel') as HTMLButtonElement;
+// Transform Input Box (TIB)
+const tibEl       = document.getElementById('tib')         as HTMLDivElement;
+const tibInput    = document.getElementById('tib-input')   as HTMLInputElement;
+const tibLabel    = document.getElementById('tib-label')   as HTMLSpanElement;
+const tibReset    = document.getElementById('tib-reset')   as HTMLButtonElement;
+// Grid config
+const gridCellEl  = document.getElementById('grid-cell')   as HTMLInputElement;
+const gridTotalEl = document.getElementById('grid-total')  as HTMLInputElement;
+const gridOxEl    = document.getElementById('grid-ox')     as HTMLInputElement;
+const gridOzEl    = document.getElementById('grid-oz')     as HTMLInputElement;
+const btnAxesToggle = document.getElementById('btn-axes-toggle') as HTMLButtonElement;
 
 function showError(msg: string) {
   errorLog.textContent = `⚠ ${msg}`;
@@ -38,15 +49,67 @@ function clearError() { errorLog.style.display = 'none'; }
 // ─── Scene ────────────────────────────────────────────────────────────────────
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0f1012);
-scene.add(new THREE.GridHelper(200, 20, 0x445566, 0x334455));
-// Indicador XYZ na origem do grid
-const axesHelper = new THREE.AxesHelper(30);
-scene.add(axesHelper);
-// Tooltip label para o AxesHelper  
-const axesLabel = document.createElement('div');
-axesLabel.style.cssText = 'position:fixed;top:0;left:0;pointer-events:none;font-size:10px;color:#aaa;display:none';
-axesLabel.textContent = 'X/Y/Z — use com Face Snap para alinhar ao grid';
-document.body.appendChild(axesLabel);
+
+// ─── Grid (reconstruído dinamicamente) ─────────────────────────────────────────────
+let currentGrid: THREE.GridHelper | null = null;
+
+function updateGrid(): void {
+  if (currentGrid) { scene.remove(currentGrid); currentGrid.dispose(); }
+  const cell  = Math.max(1, parseFloat(gridCellEl?.value  ?? '10'));
+  const total = Math.max(cell * 2, parseFloat(gridTotalEl?.value ?? '1000'));
+  const ox    = parseFloat(gridOxEl?.value ?? '0') || 0;
+  const oz    = parseFloat(gridOzEl?.value ?? '0') || 0;
+  const divs  = Math.round(total / cell);
+  currentGrid = new THREE.GridHelper(total, divs, 0x445566, 0x334455);
+  currentGrid.position.set(ox, 0, oz);
+  scene.add(currentGrid);
+  // Actualiza AxesHelper para a mesma origem
+  axesHelper.position.set(ox, 0, oz);
+}
+// updateGrid chamado quando os inputs mudam — também move o originGroup
+[gridCellEl, gridTotalEl, gridOxEl, gridOzEl].forEach(inp => {
+  inp?.addEventListener('change', () => {
+    updateGrid();
+    const ox = parseFloat(gridOxEl?.value ?? '0') || 0;
+    const oz = parseFloat(gridOzEl?.value ?? '0') || 0;
+    if (originGroup) originGroup.position.set(ox, 0, oz);
+  });
+});
+
+// Indicador de origem — três quadrados coloridos semi-transparentes nos eixos
+const originGroup = new THREE.Group();
+// XZ plane (chão) — azul
+const xzPlane = new THREE.Mesh(
+  new THREE.PlaneGeometry(60, 60),
+  new THREE.MeshBasicMaterial({ color: 0x4488ff, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false })
+);
+xzPlane.rotation.x = -Math.PI / 2;
+originGroup.add(xzPlane);
+// XY plane (parede frontal) — vermelho
+const xyPlane = new THREE.Mesh(
+  new THREE.PlaneGeometry(60, 60),
+  new THREE.MeshBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false })
+);
+originGroup.add(xyPlane);
+// YZ plane (parede lateral) — verde
+const yzPlane = new THREE.Mesh(
+  new THREE.PlaneGeometry(60, 60),
+  new THREE.MeshBasicMaterial({ color: 0x44cc66, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false })
+);
+yzPlane.rotation.y = Math.PI / 2;
+originGroup.add(yzPlane);
+// Eixos (linhas) sobre os planos
+const axesHelper = new THREE.AxesHelper(50);
+originGroup.add(axesHelper);
+scene.add(originGroup);
+// Inicializa grid com valores default
+updateGrid();
+// Toggle visibilidade
+btnAxesToggle.addEventListener('click', () => {
+  originGroup.visible = !originGroup.visible;
+  btnAxesToggle.textContent = originGroup.visible ? 'XYZ 👁 visível' : 'XYZ ∅ oculto';
+  btnAxesToggle.style.opacity = originGroup.visible ? '1' : '.5';
+});
 
 const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 2000);
 camera.position.set(80, 60, 120);
@@ -75,6 +138,176 @@ orbit.dampingFactor = 0.07;
 orbit.minDistance = 5;
 orbit.maxDistance = 800;
 
+// ─── Transform Input Box (TIB) ────────────────────────────────────────────────────
+const AXIS_COLORS: Record<string, string> = { X:'#ff6666', Y:'#66ff66', Z:'#66aaff', default:'#6ee7f7' };
+let tibActive   = false;
+let tibTyped    = false;
+let tibLastAxis = 'X'; // último eixo activo — guardado para usar após drag terminar
+const tibStartPos = new THREE.Vector3();
+const tibStartRot = new THREE.Euler();
+const tibStartScl = new THREE.Vector3();
+
+function tibShow(mesh: THREE.Mesh): void {
+  tibActive = true;
+  tibTyped  = false;
+  tibStartPos.copy(mesh.position);
+  tibStartRot.copy(mesh.rotation);
+  tibStartScl.copy(mesh.scale);
+  tibInput.value = '0';
+  tibEl.classList.remove('show');
+  tibEl.style.display = 'flex';
+  requestAnimationFrame(() => tibEl.classList.add('show'));
+  // Posição inicial: canto inferior direito da cena (se não foi ainda movido pelo user)
+  if (_tibX === 0 && _tibY === 0) {
+    _tibX = Math.max(20, innerWidth  - 230);
+    _tibY = Math.max(80, innerHeight - 200);
+  }
+  tibPositionUpdate();
+  setTimeout(() => tibInput.focus(), 80);
+}
+
+function tibHide(): void {
+  tibActive = false;
+  tibEl.style.display = 'none';
+  tibEl.className = ''; // remove axis-x/y/z + show
+}
+
+// ─── TIB — posição fixa + arrastável pelo header ───────────────────────────────────
+let _tibMouseX = 100;
+let _tibMouseY = 100;
+// Posição fixa do TIB (actualizada pelo drag do header)
+let _tibX = 0;
+let _tibY = 0;
+let _tibDragging = false;
+let _tibDragOffX = 0;
+let _tibDragOffY = 0;
+const tibHeader = document.getElementById('tib-header') as HTMLDivElement;
+
+tibHeader.addEventListener('pointerdown', (e: PointerEvent) => {
+  // Não inicia drag se o click foi no botão ↩ 0
+  if ((e.target as HTMLElement).closest('#tib-reset')) return;
+  _tibDragging = true;
+  _tibDragOffX = e.clientX - _tibX;
+  _tibDragOffY = e.clientY - _tibY;
+  tibHeader.setPointerCapture(e.pointerId);
+  e.stopPropagation();
+});
+document.addEventListener('pointermove', (e: PointerEvent) => {
+  _tibMouseX = e.clientX; _tibMouseY = e.clientY;
+  if (_tibDragging) {
+    _tibX = e.clientX - _tibDragOffX;
+    _tibY = e.clientY - _tibDragOffY;
+    tibEl.style.left = `${_tibX}px`;
+    tibEl.style.top  = `${_tibY}px`;
+  }
+});
+document.addEventListener('pointerup', () => { _tibDragging = false; });
+
+function tibPositionUpdate(): void {
+  // Posição fixa — chama apenas ao abrir o TIB (não segue o mouse)
+  // O user pode mover o TIB arrastando o header
+  tibEl.style.left = `${_tibX}px`;
+  tibEl.style.top  = `${_tibY}px`;
+}
+
+/** Converte mm interno → número na unidade actual (só o número, sem sufixo — para inputs type=number). */
+function toUnitNum(v: number): string { return (v / UNIT_SCALE[unitMode]).toFixed(2); }
+
+function tibUpdateValue(mesh: THREE.Mesh): void {
+  if (tibTyped) return;
+  const axisRaw: string = (tc as any)?.axis ?? tibLastAxis;
+  if (axisRaw) tibLastAxis = axisRaw;
+  const axisLow = axisRaw.toLowerCase();
+  const mode    = pendingTcMode;
+
+  // atualiza class CSS do eixo (mantém 'show')
+  tibEl.className = `show${axisLow.length === 1 ? ` axis-${axisLow}` : ''}`;
+  const color = AXIS_COLORS[axisRaw] ?? AXIS_COLORS.default;
+  tibLabel.style.color = color;
+
+  if (mode === 'translate') {
+    const d = mesh.position.clone().sub(tibStartPos);
+    // toUnitNum devolve só o número — compativel com <input type="number">
+    if (axisLow === 'x')      tibInput.value = toUnitNum(d.x);
+    else if (axisLow === 'y') tibInput.value = toUnitNum(d.y);
+    else if (axisLow === 'z') tibInput.value = toUnitNum(d.z);
+    else                      tibInput.value = toUnitNum(d.length());
+    tibLabel.textContent = `Δ ${axisRaw || 'XYZ'} (${unitMode})`;
+  } else if (mode === 'rotate') {
+    const a = axisLow as 'x'|'y'|'z';
+    if (a && a.length === 1) {
+      // Ângulo absoluto atual (não delta) — assim o snap com Ctrl mostra 45, 90, 135...
+      tibInput.value = THREE.MathUtils.radToDeg(mesh.rotation[a]).toFixed(2);
+    }
+    tibLabel.textContent = `θ ${axisRaw || 'ROT'} (°)`;
+  } else {
+    const a = axisLow as 'x'|'y'|'z';
+    if (a && a.length === 1) {
+      tibInput.value = (mesh.scale[a] / tibStartScl[a]).toFixed(3);
+    }
+    tibLabel.textContent = `Scale ${axisRaw || 'XYZ'}`;
+  }
+}
+
+function tibApplyTyped(): void {
+  if (selectedShapeId === null) { tibHide(); return; }
+  const val  = parseFloat(tibInput.value);
+  if (isNaN(val)) { tibHide(); return; }
+  const mesh = shapeMap.get(selectedShapeId)!;
+  // Usa tibLastAxis porque tc.axis é null depois do drag terminar
+  const axisRaw = (tc as any)?.axis || tibLastAxis || 'X';
+  const a  = axisRaw.toLowerCase() as 'x'|'y'|'z';
+  const mode = pendingTcMode;
+  if (mode === 'translate' && a.length === 1) {
+    mesh.position[a] = tibStartPos[a] + toMM(val);
+  } else if (mode === 'rotate' && a.length === 1) {
+    // Aplica como ângulo absoluto (não acumulado)
+    mesh.rotation[a] = THREE.MathUtils.degToRad(val);
+  } else if (mode === 'scale' && a.length === 1) {
+    mesh.scale[a] = tibStartScl[a] * (val !== 0 ? val : 1);
+  }
+  persistTransform(selectedShapeId, mesh);
+  tibHide();
+}
+
+const AXIS_CYCLE: Record<string, string> = { X:'Y', Y:'Z', Z:'X', x:'y', y:'z', z:'x' };
+
+function tibCycleAxis(): void {
+  // Aplica o valor actual (se não for 0) e avança para o próximo eixo
+  const val = parseFloat(tibInput.value);
+  if (!isNaN(val) && val !== 0 && selectedShapeId !== null) {
+    const mesh = shapeMap.get(selectedShapeId)!;
+    const a    = tibLastAxis.toLowerCase() as 'x'|'y'|'z';
+    const mode = pendingTcMode;
+    if      (mode === 'translate' && a.length === 1) { mesh.position[a] = tibStartPos[a] + toMM(val); tibStartPos.copy(mesh.position); }
+    else if (mode === 'rotate'    && a.length === 1) { mesh.rotation[a] = THREE.MathUtils.degToRad(val); tibStartRot.copy(mesh.rotation); }
+    else if (mode === 'scale'     && a.length === 1) { mesh.scale[a] = tibStartScl[a] * (val || 1); tibStartScl.copy(mesh.scale); }
+    persistTransform(selectedShapeId, mesh);
+  }
+  // Cicla para o próximo eixo
+  tibLastAxis = AXIS_CYCLE[tibLastAxis] ?? 'X';
+  tibTyped    = false;
+  tibInput.value = '0';
+  const axisLow = tibLastAxis.toLowerCase();
+  tibEl.className = `show axis-${axisLow}`;
+  const color = AXIS_COLORS[tibLastAxis] ?? AXIS_COLORS.default;
+  tibLabel.style.color  = color;
+  const mode = pendingTcMode;
+  tibLabel.textContent = mode === 'translate' ? `Δ ${tibLastAxis} (${unitMode})`
+                        : mode === 'rotate'   ? `Δ ${tibLastAxis} (°)`
+                        : `Scale ${tibLastAxis}`;
+  tibInput.focus(); tibInput.select();
+}
+
+tibInput.addEventListener('keydown', (e: KeyboardEvent) => {
+  if (e.key === 'Enter')  { tibApplyTyped(); e.preventDefault(); return; }
+  if (e.key === 'Escape') { tibHide(); return; }
+  if (e.key === 'Tab')    { tibCycleAxis(); e.preventDefault(); return; }
+  e.stopPropagation();
+  tibTyped = true;
+});
+// TIB fecha via deselectAll / selectShape / Esc / Enter — não aqui.
+
 // TransformControls — instanciado de forma lazy ao surgir o primeiro mesh
 let tc: TransformControls | null = null;
 let pendingTcMode = 'translate';
@@ -85,6 +318,14 @@ function getTC(): TransformControls {
     tc.setMode(pendingTcMode as 'translate' | 'rotate' | 'scale');
     const tcRoot = (tc as any).getHelper?.() ?? (tc as any)._root;
     if (tcRoot) scene.add(tcRoot);
+
+    // Actualiza TIB em tempo real enquanto o user arrasta
+    tc.addEventListener('objectChange', () => {
+      if (!tibActive || selectedShapeId === null) return;
+      const mesh = shapeMap.get(selectedShapeId);
+      if (mesh) { tibUpdateValue(mesh); tibPositionUpdate(); }
+    });
+
     tc.addEventListener('dragging-changed', async (e: any) => {
       orbit.enabled = !e.value;
       isDragging = e.value;
@@ -96,8 +337,7 @@ function getTC(): TransformControls {
         const original   = shapeMap.get(originalId)!;
         try {
           const result = await invoke<ShapeMesh>('clone_shape', { shapeId: originalId });
-          spawnMesh(result); // muda selectedShapeId + anexa TC ao clone
-          // copia a posição do original para que o clone surja no mesmo lugar
+          spawnMesh(result);
           const clone = shapeMap.get(result.shape_id)!;
           clone.position.copy(original.position);
           clone.quaternion.copy(original.quaternion);
@@ -109,10 +349,24 @@ function getTC(): TransformControls {
         return;
       }
 
-      // drag ended → persiste a transformação no kernel OCCT
-      if (!e.value && selectedShapeId !== null) {
-        const mesh = shapeMap.get(selectedShapeId);
-        if (mesh) persistTransform(selectedShapeId, mesh);
+      if (e.value) {
+        // drag iniciado → mostra TIB
+        const mesh = selectedShapeId !== null ? shapeMap.get(selectedShapeId) : null;
+        if (mesh) tibShow(mesh);
+      } else {
+        // drag terminado
+        if (tibTyped) {
+          // user digitou durante o drag: aplica imediatamente
+          tibApplyTyped();
+        } else {
+          // arraste normal: persiste mas mantém TIB visível para o user ajustar
+          tibTyped = false; // reseta flag para próximo input
+          if (selectedShapeId !== null) {
+            const mesh = shapeMap.get(selectedShapeId);
+            if (mesh) persistTransform(selectedShapeId, mesh);
+          }
+          // TIB permanece aberto até click-fora (ver listener abaixo)
+        }
       }
     });
   }
@@ -122,9 +376,95 @@ function getTC(): TransformControls {
 // ─── State — declarado ANTES do animate() para evitar TDZ ────────────────────────────
 let activePrim: PrimType = 'box';
 const shapeMap = new Map<number, THREE.Mesh>();
+const originalScales = new Map<number, THREE.Vector3>(); // escala original na criação
 let selectedShapeId: number | null = null;
 let isDragging    = false;
 let pendingClone  = false;
+
+// ─── Multi-seleção para Booleanos ─────────────────────────────────────────────
+// selectionOrder[0] = A (primeiro clicado), selectionOrder[1] = B (segundo)
+const selectionOrder: number[] = [];
+const _boolRow = document.getElementById('boolean-row') as HTMLDivElement | null;
+
+function updateBoolRow(): void {
+  if (!_boolRow) return;
+  if (selectionOrder.length === 2) {
+    _boolRow.style.display = 'flex';
+    // Destaca A em azul, B em vermelho
+    shapeMap.forEach((mesh, id) => {
+      const mat = mesh.material as THREE.MeshStandardMaterial;
+      if (id === selectionOrder[0])      mat.emissive.setHex(0x003366);  // A
+      else if (id === selectionOrder[1]) mat.emissive.setHex(0x550000);  // B
+      else                               mat.emissive.setHex(0x000000);
+    });
+  } else {
+    _boolRow.style.display = 'none';
+  }
+}
+
+function addToSelection(id: number): void {
+  const idx = selectionOrder.indexOf(id);
+  if (idx >= 0) {
+    // Já selecionado → remove (toggle)
+    selectionOrder.splice(idx, 1);
+    const m = shapeMap.get(id) as any;
+    if (m?.material?.emissive) m.material.emissive.setHex(0x111111);
+  } else {
+    if (selectionOrder.length >= 2) {
+      // já tem 2 → substitui o mais antigo
+      const oldId = selectionOrder.shift()!;
+      const om = shapeMap.get(oldId) as any;
+      if (om?.material?.emissive) om.material.emissive.setHex(0x000000);
+    }
+    selectionOrder.push(id);
+  }
+  updateBoolRow();
+}
+
+function clearBoolSelection(): void {
+  selectionOrder.forEach(id => {
+    const m = shapeMap.get(id) as any;
+    if (m?.material?.emissive) m.material.emissive.setHex(0x000000);
+  });
+  selectionOrder.length = 0;
+  if (_boolRow) _boolRow.style.display = 'none';
+}
+
+// ─── Booleanos: handlers dos botões ────────────────────────────────────────────
+async function runBoolean(op: 'boolean_union' | 'boolean_cut' | 'boolean_intersect'): Promise<void> {
+  if (selectionOrder.length < 2) return;
+  const [idA, idB] = selectionOrder;
+  try {
+    type ShapeMesh = { shape_id: number; mesh: { vertices: number[]; indices: number[] } };
+    const result = await invoke<ShapeMesh>(op, { idA, idB });
+    // Atualiza a geometria do mesh A com o resultado
+    const meshA = shapeMap.get(idA)!;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(result.mesh.vertices), 3));
+    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(result.mesh.indices), 1));
+    geo.computeVertexNormals();
+    meshA.geometry.dispose();
+    meshA.geometry = geo;
+    initBVH(meshA);
+    // Remove mesh B da cena
+    const meshB = shapeMap.get(idB)!;
+    scene.remove(meshB);
+    meshB.geometry.dispose();
+    shapeMap.delete(idB);
+    cadStore.removeShape(idB);
+    // Limpa seleção
+    clearBoolSelection();
+    selectedShapeId = idA;
+    (meshA.material as THREE.MeshStandardMaterial).emissive.setHex(0x111111);
+  } catch (err) {
+    console.error(`${op} falhou:`, err);
+  }
+}
+
+document.getElementById('btn-union')?.    addEventListener('click', () => runBoolean('boolean_union'));
+document.getElementById('btn-cut')?.      addEventListener('click', () => runBoolean('boolean_cut'));
+document.getElementById('btn-intersect')?.addEventListener('click', () => runBoolean('boolean_intersect'));
+
 
 // ─── Object info panel (precisa de selectedShapeId antes do animate) ─────────────────
 function updateInfoPanel(): void {
@@ -142,13 +482,46 @@ function updateInfoPanel(): void {
   infoSizeEl.textContent = `${fromMM(s.x)} × ${fromMM(s.y)} × ${fromMM(s.z)}`;
 }
 
-// Render loop
-(function animate() {
-  requestAnimationFrame(animate);
-  orbit.update();
-  renderer.render(scene, camera);
-  updateInfoPanel();
-})();
+// \u2500\u2500\u2500 Origin plane hover + select \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n// Planos: 0=XZ(floor/azul), 1=XY(frontal/vermelho), 2=YZ(lateral/verde)
+const originPlanes: THREE.Mesh[] = [xzPlane as THREE.Mesh, xyPlane as THREE.Mesh, yzPlane as THREE.Mesh];
+const PLANE_BASE_OPACITY    = [0.18, 0.12, 0.12];
+const PLANE_HOVER_OPACITY   = [0.45, 0.35, 0.35];
+const PLANE_SELECT_OPACITY  = [0.65, 0.55, 0.55];
+let hoveredPlaneIdx  = -1;
+let selectedPlaneIdx = -1;
+const _originRay = new THREE.Raycaster();
+const _mouseVec   = new THREE.Vector2();
+
+// Clique num plano → seleciona / deseleciona
+renderer.domElement.addEventListener('click', (e: MouseEvent) => {
+  if (!originGroup.visible) return;
+  _mouseVec.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  _originRay.setFromCamera(_mouseVec, camera);
+  const hits = _originRay.intersectObjects(originPlanes, false);
+  if (hits.length > 0) {
+    const idx = originPlanes.indexOf(hits[0].object as THREE.Mesh);
+    selectedPlaneIdx = (selectedPlaneIdx === idx) ? -1 : idx; // toggle
+  }
+});
+
+function updateOriginPlanes(): void {
+  if (!originGroup.visible) return;
+  _mouseVec.set((_tibMouseX / innerWidth) * 2 - 1, -(_tibMouseY / innerHeight) * 2 + 1);
+  _originRay.setFromCamera(_mouseVec, camera);
+  const hits = _originRay.intersectObjects(originPlanes, false);
+  hoveredPlaneIdx = hits.length > 0 ? originPlanes.indexOf(hits[0].object as THREE.Mesh) : -1;
+
+  originPlanes.forEach((plane, i) => {
+    const mat = plane.material as THREE.MeshBasicMaterial;
+    if (i === selectedPlaneIdx) {
+      mat.opacity = PLANE_SELECT_OPACITY[i];
+    } else if (i === hoveredPlaneIdx) {
+      mat.opacity = PLANE_HOVER_OPACITY[i];
+    } else {
+      mat.opacity = PLANE_BASE_OPACITY[i];
+    }
+  });
+}
 
 window.addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
@@ -175,10 +548,366 @@ document.querySelectorAll('.unit-btn').forEach(btn => {
     document.querySelectorAll('.ctrl input[type="number"]').forEach(inp => {
       (inp as HTMLInputElement).step = unitMode === 'mm' ? '1' : '0.1';
     });
+    // Actualiza os spans com a unidade nos labels
+    document.querySelectorAll('.unit-lbl').forEach(el => {
+      el.textContent = `(${unitMode})`;
+    });
   });
 });
 
+// ─── i18n ─────────────────────────────────────────────────────────────────────
+type Lang = 'pt' | 'en';
+let currentLang: Lang = 'pt';
 
+const TRANSLATIONS: Record<Lang, Record<string, string>> = {
+  pt: {
+    width:'Largura', height:'Altura', depth:'Profund.', radius:'Raio',
+    rBottom:'R. Base', rTop:'R. Topo', generate:'Gerar', floor:'⬇ Chão',
+    deleteLbl:'🗑 Apagar', language:'Língua', xyzVisible:'XYZ 👁 visível',
+    theme:'Tema', zoom:'Zoom', orbit:'Giro', pan:'Pan',
+    box:'Caixa', cylinder:'Cilindro', sphere:'Esfera', cone:'Cone',
+    faceSnap:'🧲 Encaixe de Face', faceFace:'Face ↔ Face', centerCenter:'Centro ↔ Centro',
+    snapMode:'Encaixe', off:'Desli.', faceAuto:'Face Auto',
+  },
+  en: {
+    width:'Width', height:'Height', depth:'Depth', radius:'Radius',
+    rBottom:'R Bottom', rTop:'R Top', generate:'Generate', floor:'⬇ Floor',
+    deleteLbl:'🗑 Delete', language:'Language', xyzVisible:'XYZ 👁 visible',
+    theme:'Theme', zoom:'Zoom', orbit:'Orbit', pan:'Pan',
+    box:'Box', cylinder:'Cylinder', sphere:'Sphere', cone:'Cone',
+    faceSnap:'🧲 Face Snap', faceFace:'Face ↔ Face', centerCenter:'Center ↔ Center',
+    snapMode:'Snap', off:'Off', faceAuto:'Face Auto',
+  },
+};
+
+function applyLang(lang: Lang): void {
+  currentLang = lang;
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = (el as HTMLElement).dataset.i18n!;
+    const text = TRANSLATIONS[lang][key];
+    if (text) el.textContent = text;
+  });
+  const btnLang = document.getElementById('btn-lang') as HTMLButtonElement | null;
+  if (btnLang) btnLang.textContent = lang === 'pt' ? 'EN' : 'PT-BR';
+}
+
+const btnLang = document.getElementById('btn-lang') as HTMLButtonElement | null;
+btnLang?.addEventListener('click', () => applyLang(currentLang === 'pt' ? 'en' : 'pt'));
+// Aplica PT-BR imediatamente ao carregar
+applyLang('pt');
+
+// ─── Tema claro / escuro (afeta UI + viewport 3D) ────────────────────────────
+let _lightTheme = false;
+
+function applyTheme3D(light: boolean): void {
+  // Fundo da cena 3D
+  const bgDark  = new THREE.Color(0x0f1012);
+  const bgLight = new THREE.Color(0xe8ecf0);
+  scene.background = light ? bgLight : bgDark;
+
+  // Grid helper: recria com cores temáticas
+  if (currentGrid) {
+    scene.remove(currentGrid); currentGrid.dispose();
+  }
+  const cell  = Math.max(1, parseFloat((document.getElementById('grid-cell')  as HTMLInputElement)?.value ?? '10'));
+  const total = Math.max(cell * 2, parseFloat((document.getElementById('grid-total') as HTMLInputElement)?.value ?? '1000'));
+  const ox    = parseFloat((document.getElementById('grid-ox') as HTMLInputElement)?.value ?? '0') || 0;
+  const oz    = parseFloat((document.getElementById('grid-oz') as HTMLInputElement)?.value ?? '0') || 0;
+  const divs  = Math.round(total / cell);
+  const cCenter = light ? 0x778899 : 0x445566;
+  const cLines  = light ? 0xaabbcc : 0x334455;
+  currentGrid = new THREE.GridHelper(total, divs, cCenter, cLines);
+  currentGrid.position.set(ox, 0, oz);
+  scene.add(currentGrid);
+
+  // Cor dos objetos gerados: no tema claro ficam mais escuros p/ visibilidade
+  shapeMap.forEach(mesh => {
+    const mat = mesh.material as THREE.MeshStandardMaterial;
+    if (mat?.color) {
+      mat.color.set(light ? 0x3a6080 : 0x5a8fb0);
+      mat.needsUpdate = true;
+    }
+  });
+
+  // ViewCube Background (no renderViewCube)
+  _vcBgColor = light ? 0xe2e8ef : 0x0d1117;
+
+  // updateGrid no renderViewCube já usa _vcBgColor
+}
+
+let _vcBgColor = 0x0d1117; // usado em renderViewCube
+
+const btnTheme = document.getElementById('btn-theme') as HTMLButtonElement | null;
+btnTheme?.addEventListener('click', () => {
+  _lightTheme = !_lightTheme;
+  document.body.classList.toggle('light-theme', _lightTheme);
+  if (btnTheme) btnTheme.textContent = _lightTheme ? '🌙 Escuro' : '☀ Claro';
+  applyTheme3D(_lightTheme);
+});
+
+// ─── Barra de navegação inferior ─────────────────────────────────────────────
+const _nbZoomSlider = document.getElementById('nb-zoom-slider') as HTMLInputElement | null;
+
+// Sincroniza slider com a distância da câmera ao target
+function nbSyncSlider(): void {
+  if (!_nbZoomSlider) return;
+  const dist = camera.position.distanceTo(orbit.target);
+  _nbZoomSlider.value = String(Math.round(dist));
+}
+
+_nbZoomSlider?.addEventListener('input', () => {
+  const dist = parseFloat(_nbZoomSlider!.value);
+  const dir = camera.position.clone().sub(orbit.target).normalize();
+  camera.position.copy(orbit.target).addScaledVector(dir, dist);
+  orbit.update();
+});
+
+function nbZoom(delta: number): void {
+  const sph = new THREE.Spherical().setFromVector3(camera.position.clone().sub(orbit.target));
+  sph.radius = Math.max(10, sph.radius + delta);
+  camera.position.setFromSpherical(sph).add(orbit.target);
+  orbit.update(); nbSyncSlider();
+}
+function nbOrbit(dt: number, dp: number): void {
+  const sph = new THREE.Spherical().setFromVector3(camera.position.clone().sub(orbit.target));
+  sph.theta += dt; sph.phi = Math.max(0.05, Math.min(Math.PI-0.05, sph.phi + dp));
+  camera.position.setFromSpherical(sph).add(orbit.target);
+  camera.lookAt(orbit.target); orbit.update();
+}
+function nbPan(dx: number, dy: number): void {
+  const right = new THREE.Vector3().crossVectors(camera.getWorldDirection(new THREE.Vector3()), camera.up).normalize();
+  const up    = camera.up.clone();
+  orbit.target.addScaledVector(right, dx).addScaledVector(up, dy);
+  camera.position.addScaledVector(right, dx).addScaledVector(up, dy);
+  orbit.update();
+}
+
+// Hold-to-repeat helper
+function nbHold(el: string | null, fn: () => void, interval = 80): void {
+  const btn = typeof el === 'string' ? document.getElementById(el) : el;
+  if (!btn) return;
+  let tid: ReturnType<typeof setInterval> | null = null;
+  btn.addEventListener('pointerdown', (e) => { e.preventDefault(); fn(); tid = setInterval(fn, interval); });
+  const stop = () => { if (tid) { clearInterval(tid); tid = null; } };
+  btn.addEventListener('pointerup', stop); btn.addEventListener('pointerleave', stop);
+}
+
+nbHold('nb-zoom-out', () => nbZoom(10));
+nbHold('nb-zoom-in',  () => nbZoom(-10));
+nbHold('nb-orb-l',    () => nbOrbit(-0.08, 0));
+nbHold('nb-orb-r',    () => nbOrbit( 0.08, 0));
+nbHold('nb-orb-u',    () => nbOrbit(0, -0.08));
+nbHold('nb-orb-d',    () => nbOrbit(0,  0.08));
+nbHold('nb-pan-l',    () => nbPan(-3, 0));
+nbHold('nb-pan-r',    () => nbPan( 3, 0));
+nbHold('nb-pan-u',    () => nbPan(0,  3));
+nbHold('nb-pan-d',    () => nbPan(0, -3));
+document.getElementById('nb-home')?.addEventListener('click', () => animateCameraTo(new THREE.Vector3(80, 60, 120)));
+
+
+// \u2500\u2500\u2500 ViewCube 3D \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+const VC_SIZE  = 130;  // px — tamanho do ViewCube
+const VC_TOP   = 14;
+const VC_RIGHT = 14;
+
+// Cena dedicada sem os objetos da cena principal
+const vcScene  = new THREE.Scene();
+const vcCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 20);
+vcCamera.position.set(0, 0, 4);
+// Overlay div (eventos de mouse)
+const vcOverlay = document.getElementById('vc-overlay') as HTMLDivElement;
+
+vcScene.add(new THREE.AmbientLight(0xffffff, 0.9));
+const vcDirL = new THREE.DirectionalLight(0xffffff, 0.5);
+vcDirL.position.set(2, 3, 4); vcScene.add(vcDirL);
+
+// BoxGeometry face order: +X=Right, -X=Left, +Y=Top, -Y=Bottom, +Z=Front, -Z=Back
+const VC_FACE_INFO = [
+  { label: 'Right',  bg: '#11284a', border: '#4488cc' },
+  { label: 'Left',   bg: '#11284a', border: '#4488cc' },
+  { label: 'Top',    bg: '#112e1f', border: '#44cc66' },
+  { label: 'Bottom', bg: '#112e1f', border: '#44cc66' },
+  { label: 'Front',  bg: '#1a1135', border: '#9966ee' },
+  { label: 'Back',   bg: '#1a1135', border: '#9966ee' },
+];
+
+function makeVCFaceTex(fi: typeof VC_FACE_INFO[0], hovered = false): THREE.CanvasTexture {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = hovered ? '#1e3260' : fi.bg;
+  ctx.fillRect(0, 0, 256, 256);
+  ctx.strokeStyle = hovered ? '#6ee7f7' : fi.border;
+  ctx.lineWidth = hovered ? 10 : 5;
+  ctx.strokeRect(4, 4, 248, 248);
+  ctx.fillStyle = hovered ? '#fff' : '#b8cce4';
+  ctx.font = `bold ${fi.label.length > 4 ? 36 : 48}px system-ui,sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(fi.label, 128, 128);
+  return new THREE.CanvasTexture(c);
+}
+
+const vcFaceMats = VC_FACE_INFO.map(f => new THREE.MeshLambertMaterial({ map: makeVCFaceTex(f) }));
+const vcCube = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 1.6), vcFaceMats);
+vcScene.add(vcCube);
+
+// ── Cube edges (LineSegments) ─────────────────────────────────────────────────
+const edgesGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(1.6, 1.6, 1.6));
+const edgesMat = new THREE.LineBasicMaterial({ color: 0x6ee7f7, transparent: true, opacity: 0.4 });
+vcScene.add(new THREE.LineSegments(edgesGeo, edgesMat));
+
+const VC_CORNERS = [
+  [-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],
+  [-1,-1, 1],[1,-1, 1],[1,1, 1],[-1,1, 1],
+] as const;
+const VC_CORNER_CAMS: THREE.Vector3[] = VC_CORNERS.map(([x,y,z]) =>
+  new THREE.Vector3(x,y,z).normalize().multiplyScalar(200));
+const vcCornerMat  = new THREE.MeshBasicMaterial({ color: 0x6ee7f7, transparent: true, opacity: 0.75 });
+const vcCornerMatH = new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 1.0 });
+const vcCornersGeo = new THREE.SphereGeometry(0.09, 8, 8);
+const vcCornerMeshes: THREE.Mesh[] = VC_CORNERS.map(([x,y,z]) => {
+  const m = new THREE.Mesh(vcCornersGeo, vcCornerMat);
+  m.position.set(x * 0.85, y * 0.85, z * 0.85);
+  vcScene.add(m); return m;
+});
+
+const VC_CAM_DIST = 200;
+const VC_FACE_CAMS: THREE.Vector3[] = [
+  new THREE.Vector3( VC_CAM_DIST, 0, 0), // Right
+  new THREE.Vector3(-VC_CAM_DIST, 0, 0), // Left
+  new THREE.Vector3(0,  VC_CAM_DIST, 1), // Top (offset to avoid gimbal)
+  new THREE.Vector3(0, -VC_CAM_DIST, 1), // Bottom
+  new THREE.Vector3(0, 0,  VC_CAM_DIST), // Front
+  new THREE.Vector3(0, 0, -VC_CAM_DIST), // Back
+];
+
+let _vcAnimFrame: number | null = null;
+function animateCameraTo(target: THREE.Vector3): void {
+  const start = camera.position.clone();
+  const t0 = performance.now();
+  if (_vcAnimFrame !== null) cancelAnimationFrame(_vcAnimFrame);
+  function step(now: number) {
+    const t = Math.min((now - t0) / 450, 1);
+    const e = 1 - Math.pow(1 - t, 3);
+    camera.position.lerpVectors(start, target, e);
+    camera.lookAt(orbit.target);
+    orbit.update();
+    if (t < 1) _vcAnimFrame = requestAnimationFrame(step);
+    else { orbit.update(); }
+  }
+  _vcAnimFrame = requestAnimationFrame(step);
+}
+
+const vcRay = new THREE.Raycaster();
+const vcMouse2 = new THREE.Vector2();
+let _vcHoveredFace = -1;
+let _vcHoveredCorner = -1;
+
+function vcSetMouse(e: MouseEvent | PointerEvent): void {
+  const rect = vcOverlay.getBoundingClientRect();
+  vcMouse2.set(
+    ((e.clientX - rect.left) / rect.width)  * 2 - 1,
+    -((e.clientY - rect.top)  / rect.height) * 2 + 1,
+  );
+  vcRay.setFromCamera(vcMouse2, vcCamera);
+}
+
+function vcUpdateHover(e: MouseEvent | PointerEvent): void {
+  vcSetMouse(e);
+  // Corners first
+  const cornerHits = vcRay.intersectObjects(vcCornerMeshes, false);
+  const newCorner = cornerHits.length > 0 ? vcCornerMeshes.indexOf(cornerHits[0].object as THREE.Mesh) : -1;
+  if (newCorner !== _vcHoveredCorner) {
+    if (_vcHoveredCorner >= 0) vcCornerMeshes[_vcHoveredCorner].material = vcCornerMat;
+    _vcHoveredCorner = newCorner;
+    if (newCorner >= 0) vcCornerMeshes[newCorner].material = vcCornerMatH;
+  }
+  // Face hover (only when no corner hovered)
+  const cubeHits = vcRay.intersectObject(vcCube, false);
+  const newFace  = (newCorner < 0 && cubeHits.length > 0 && cubeHits[0].face)
+    ? Math.floor(cubeHits[0].face.materialIndex) : -1;
+  if (newFace !== _vcHoveredFace) {
+    if (_vcHoveredFace >= 0) {
+      const fi = _vcHoveredFace;
+      vcFaceMats[fi].map?.dispose();
+      vcFaceMats[fi].map = makeVCFaceTex(VC_FACE_INFO[fi], false);
+      vcFaceMats[fi].needsUpdate = true;
+    }
+    _vcHoveredFace = newFace;
+    if (newFace >= 0) {
+      vcFaceMats[newFace].map?.dispose();
+      vcFaceMats[newFace].map = makeVCFaceTex(VC_FACE_INFO[newFace], true);
+      vcFaceMats[newFace].needsUpdate = true;
+    }
+  }
+  vcOverlay.style.cursor = (newCorner >= 0 || newFace >= 0) ? 'pointer' : (_vcDragging ? 'grabbing' : 'grab');
+}
+
+vcOverlay.addEventListener('mousemove', vcUpdateHover);
+
+vcOverlay.addEventListener('click', (e: MouseEvent) => {
+  if (_vcDragMoved) return;
+  vcSetMouse(e);
+  const cH = vcRay.intersectObjects(vcCornerMeshes, false);
+  if (cH.length > 0) { animateCameraTo(VC_CORNER_CAMS[vcCornerMeshes.indexOf(cH[0].object as THREE.Mesh)]); return; }
+  const fH = vcRay.intersectObject(vcCube, false);
+  if (fH.length > 0 && fH[0].face) animateCameraTo(VC_FACE_CAMS[fH[0].face.materialIndex]);
+});
+
+// ── Drag to orbit ────────────────────────────────────────────────────────────
+let _vcDragging = false;
+let _vcDragMoved = false;
+let _vcDragLastX = 0;
+let _vcDragLastY = 0;
+
+vcOverlay.addEventListener('pointerdown', (e: PointerEvent) => {
+  _vcDragging = true; _vcDragMoved = false;
+  _vcDragLastX = e.clientX; _vcDragLastY = e.clientY;
+  vcOverlay.setPointerCapture(e.pointerId); e.stopPropagation();
+});
+vcOverlay.addEventListener('pointermove', (e: PointerEvent) => {
+  vcUpdateHover(e);
+  if (!_vcDragging) return;
+  const dx = e.clientX - _vcDragLastX, dy = e.clientY - _vcDragLastY;
+  if (Math.abs(dx) + Math.abs(dy) > 2) _vcDragMoved = true;
+  _vcDragLastX = e.clientX; _vcDragLastY = e.clientY;
+  const sph = new THREE.Spherical().setFromVector3(camera.position.clone().sub(orbit.target));
+  sph.theta -= dx * 0.012;
+  sph.phi    = Math.max(0.05, Math.min(Math.PI - 0.05, sph.phi - dy * 0.012));
+  camera.position.setFromSpherical(sph).add(orbit.target);
+  camera.lookAt(orbit.target); orbit.update();
+});
+vcOverlay.addEventListener('pointerup', () => { _vcDragging = false; });
+
+// Renderiza o ViewCube usando scissorTest no renderer principal (1 único contexto WebGL)
+function renderViewCube(): void {
+  const W = renderer.domElement.clientWidth;    // CSS px
+  const H = renderer.domElement.clientHeight;   // CSS px
+
+  // Three.js setScissor/setViewport já multiplicam por pixelRatio internamente
+  // (Y conta de baixo para cima no WebGL)
+  const vcLeft   = W - VC_RIGHT - VC_SIZE;
+  const vcBottom = H - VC_TOP   - VC_SIZE;
+
+  renderer.setScissorTest(true);
+  renderer.setScissor(vcLeft, vcBottom, VC_SIZE, VC_SIZE);
+  renderer.setViewport(vcLeft, vcBottom, VC_SIZE, VC_SIZE);
+
+  // Limpa cor + profundidade apenas na região do ViewCube
+  renderer.setClearColor(_vcBgColor, 1);
+  renderer.clear(true, true, false);
+
+  // Sincroniza a orientação do cubo com a câmera invertida
+  vcCube.quaternion.copy(camera.quaternion).invert();
+  vcCornerMeshes.forEach(m => m.quaternion.copy(vcCube.quaternion));
+
+  renderer.render(vcScene, vcCamera);
+
+  // Restaura viewport, scissor e clear color originais
+  renderer.setScissorTest(false);
+  renderer.setViewport(0, 0, W, H);
+  // clear color da cena principal varia com o tema
+  renderer.setClearColor(_lightTheme ? 0xe8ecf0 : 0x0f1012, 1);
+}
 
 // ─── Floor (gravidade) ────────────────────────────────────────────────────────
 btnFloor.addEventListener('click', () => {
@@ -255,17 +984,21 @@ const MAT_DEFAULT = { color: 0x9eadba, emissive: new THREE.Color(0x000000) };
 const MAT_SELECT  = new THREE.Color(0x1a3a6e); // emissive do objeto selecionado
 
 /** Seleciona um shape: destaca com emissive + acopla TC. */
+const _filletRow    = document.getElementById('fillet-row')    as HTMLDivElement | null;
+const _filletRadius = document.getElementById('fillet-radius') as HTMLInputElement | null;
+
 function selectShape(id: number): void {
-  // Remove destaque do anterior
   if (selectedShapeId !== null && selectedShapeId !== id) {
     const prev = shapeMap.get(selectedShapeId);
     if (prev) (prev.material as THREE.MeshStandardMaterial).emissive.copy(MAT_DEFAULT.emissive);
+    tibHide(); // fecha TIB ao trocar de objeto
   }
   selectedShapeId = id;
   const mesh = shapeMap.get(id);
   if (!mesh) return;
   (mesh.material as THREE.MeshStandardMaterial).emissive.copy(MAT_SELECT);
   getTC().attach(mesh);
+  if (_filletRow) _filletRow.style.display = 'flex'; // mostra painel de arestas
 }
 
 /** Deseleciona tudo. */
@@ -277,28 +1010,139 @@ function deselectAll(): void {
   selectedShapeId = null;
   tc?.detach();
   clearFaceHighlight();
+  tibHide(); // fecha TIB ao desselecionar
+  if (_filletRow) _filletRow.style.display = 'none';
 }
+
+// ─── Fillet / Chamfer handlers ─────────────────────────────────────────────────
+async function runEdgeOp(op: 'fillet_shape' | 'chamfer_shape' | 'shell_shape'): Promise<void> {
+  if (selectedShapeId === null) return;
+  const id     = selectedShapeId;
+  const mesh   = shapeMap.get(id)!;
+  const radius = parseFloat(_filletRadius?.value ?? '3');
+  if (isNaN(radius) || radius <= 0) return;
+  try {
+    type ShapeMesh = { shape_id: number; mesh: { vertices: number[]; indices: number[] } };
+    const result = await invoke<ShapeMesh>(op, { shapeId: id, radius, dist: radius, thickness: radius });
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(result.mesh.vertices), 3));
+    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(result.mesh.indices), 1));
+    geo.computeVertexNormals();
+    mesh.geometry.dispose();
+    mesh.geometry = geo;
+    initBVH(mesh);
+  } catch (err) {
+    console.error(`${op} falhou:`, err);
+  }
+}
+
+document.getElementById('btn-fillet')?.addEventListener('click',  () => runEdgeOp('fillet_shape'));
+document.getElementById('btn-chamfer')?.addEventListener('click', () => runEdgeOp('chamfer_shape'));
+
+// Shell usa input separado (shell-thickness)
+document.getElementById('btn-shell')?.addEventListener('click', async () => {
+  if (selectedShapeId === null) return;
+  const id   = selectedShapeId;
+  const mesh = shapeMap.get(id)!;
+  const t    = parseFloat((document.getElementById('shell-thickness') as HTMLInputElement)?.value ?? '3');
+  if (isNaN(t) || t <= 0) return;
+  try {
+    type ShapeMesh = { shape_id: number; mesh: { vertices: number[]; indices: number[] } };
+    const result = await invoke<ShapeMesh>('shell_shape', { shapeId: id, thickness: t });
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(result.mesh.vertices), 3));
+    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(result.mesh.indices), 1));
+    geo.computeVertexNormals();
+    mesh.geometry.dispose();
+    mesh.geometry = geo;
+    initBVH(mesh);
+  } catch (err) { console.error('shell_shape falhou:', err); }
+});
+
+// ─── Painel lateral #ops-panel ───────────────────────────────────────────────
+const _opsPanel = document.getElementById('ops-panel') as HTMLElement | null;
+const _opsTab   = document.getElementById('ops-tab')   as HTMLElement | null;
+
+function toggleOpsPanel(open?: boolean): void {
+  if (!_opsPanel) return;
+  const isOpen = _opsPanel.classList.contains('open');
+  const shouldOpen = open ?? !isOpen;
+  _opsPanel.classList.toggle('open', shouldOpen);
+  if (_opsTab) _opsTab.style.left = shouldOpen ? '240px' : '0';
+}
+
+_opsTab?.addEventListener('click', () => toggleOpsPanel());
+document.getElementById('ops-close')?.addEventListener('click', () => toggleOpsPanel(false));
+
+// Colapso individual de cada seção
+document.querySelectorAll('.ops-toggle').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const expanded = btn.getAttribute('aria-expanded') === 'true';
+    btn.setAttribute('aria-expanded', String(!expanded));
+    const body = btn.nextElementSibling as HTMLElement;
+    if (body) body.classList.toggle('collapsed', expanded);
+  });
+});
+
 
 // ─── Face highlight overlay ────────────────────────────────────────────────
 let faceHighlightMesh: THREE.Mesh | null = null;
 
-/** Mostra um disco roxo na face clicada como indicador visual. */
+/** Destaca precisamente a face lógica completa do mesh — agrupa todos os triângulos co-planares. */
 function highlightFace(hit: THREE.Intersection): void {
   clearFaceHighlight();
   if (!hit.face) return;
   const src = hit.object as THREE.Mesh;
-  // Normal da face em world-space para orientar o disco
-  const worldNormal = hit.face.normal.clone().transformDirection(src.matrixWorld).normalize();
-  // Disc de raio fixo centrado no ponto de hit, virado para a normal
-  const geo = new THREE.CircleGeometry(8, 32);
-  const mat = new THREE.MeshBasicMaterial({
-    color: 0xa78bfa, transparent: true, opacity: 0.55, depthTest: false, side: THREE.DoubleSide,
+  const geo = src.geometry as THREE.BufferGeometry;
+  const posAttr = geo.getAttribute('position') as THREE.BufferAttribute;
+  const idxAttr = geo.getIndex();
+
+  // Normal da face clicada em world-space (normalizado)
+  const worldNormal = hit.face.normal.clone()
+    .transformDirection(src.matrixWorld).normalize();
+  // d = distância do plano à origem (plano: worldNormal · x = d)
+  const d = worldNormal.dot(hit.point);
+
+  // Recolhe vértices de todos os triângulos co-planares (mesma normal ≈ mesma face lógica)
+  const EPS = 0.01;
+  const faceVerts: number[] = [];
+  const triCount = idxAttr ? idxAttr.count / 3 : posAttr.count / 3;
+  const tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3(), tmpC = new THREE.Vector3();
+
+  for (let t = 0; t < triCount; t++) {
+    const ia = idxAttr ? idxAttr.getX(t * 3)     : t * 3;
+    const ib = idxAttr ? idxAttr.getX(t * 3 + 1) : t * 3 + 1;
+    const ic = idxAttr ? idxAttr.getX(t * 3 + 2) : t * 3 + 2;
+    tmpA.fromBufferAttribute(posAttr, ia).applyMatrix4(src.matrixWorld);
+    tmpB.fromBufferAttribute(posAttr, ib).applyMatrix4(src.matrixWorld);
+    tmpC.fromBufferAttribute(posAttr, ic).applyMatrix4(src.matrixWorld);
+
+    // Calcula normal do triângulo
+    const edge1 = tmpB.clone().sub(tmpA);
+    const edge2 = tmpC.clone().sub(tmpA);
+    const triNormal = edge1.cross(edge2).normalize();
+
+    // Co-planar: normal paralela E mesmo plano
+    const normalAlign = Math.abs(triNormal.dot(worldNormal));
+    const planeDist   = Math.abs(worldNormal.dot(tmpA) - d);
+    if (normalAlign > (1 - EPS) && planeDist < EPS) {
+      faceVerts.push(tmpA.x, tmpA.y, tmpA.z);
+      faceVerts.push(tmpB.x, tmpB.y, tmpB.z);
+      faceVerts.push(tmpC.x, tmpC.y, tmpC.z);
+    }
+  }
+
+  if (faceVerts.length === 0) return; // fallback — nenhum triângulo encontrado
+
+  const hlGeo = new THREE.BufferGeometry();
+  hlGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(faceVerts), 3));
+  const hlMat = new THREE.MeshBasicMaterial({
+    color: 0xa78bfa, transparent: true, opacity: 0.55,
+    depthTest: false, side: THREE.DoubleSide,
   });
-  faceHighlightMesh = new THREE.Mesh(geo, mat);
-  faceHighlightMesh.position.copy(hit.point);
-  faceHighlightMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), worldNormal);
-  // Afasta ligeiramente da superficie para evitar z-fighting
-  faceHighlightMesh.position.addScaledVector(worldNormal, 0.3);
+  faceHighlightMesh = new THREE.Mesh(hlGeo, hlMat);
+  // Afasta ligeiramente da superfície para evitar z-fighting
+  faceHighlightMesh.position.addScaledVector(worldNormal, 0.5);
   scene.add(faceHighlightMesh);
 }
 
@@ -315,6 +1159,36 @@ btnDelete.addEventListener('click', deleteSelected);
 window.addEventListener('keydown', (e: KeyboardEvent) => {
   if (e.key === 'Delete' || e.key === 'Backspace') deleteSelected();
 }, { capture: false }); // Não usa capture para não disputar com o undo/redo listener
+
+// ─── Ctrl + Rotate → snap a 45° ──────────────────────────────────────────────
+const SNAP_45 = Math.PI / 4; // 45 graus em radianos
+
+// Garante que o OrbitControls NÃO use Ctrl para pan (evita conflito com snap de TC)
+// OrbitControls usa mouseButtons.RIGHT para pan; com Ctrl não deve interferir
+(orbit as any).mouseButtons = { LEFT: 0, MIDDLE: 1, RIGHT: 2 }; // ROTATE=0, DOLLY=1, PAN=2
+(orbit as any).keyPanSpeed = 0; // desabilita pan por teclado
+
+window.addEventListener('keydown', (e: KeyboardEvent) => {
+  if (e.key !== 'Control') return;
+  if (tc && pendingTcMode === 'rotate') {
+    tc.rotationSnap = SNAP_45;
+    // Força update imediato do TIB se estiver numa drag ativa
+    if (tibActive && selectedShapeId !== null) {
+      const mesh = shapeMap.get(selectedShapeId);
+      if (mesh) tibUpdateValue(mesh);
+    }
+  }
+});
+window.addEventListener('keyup', (e: KeyboardEvent) => {
+  if (e.key !== 'Control') return;
+  if (tc) {
+    tc.rotationSnap = null; // volta a livre
+    if (tibActive && selectedShapeId !== null) {
+      const mesh = shapeMap.get(selectedShapeId);
+      if (mesh) tibUpdateValue(mesh);
+    }
+  }
+});
 
 async function deleteSelected(): Promise<void> {
   if (selectedShapeId === null) return;
@@ -360,18 +1234,44 @@ function applyFaceSnap(faceA: FacePick, faceB: FacePick): void {
     const centerB = new THREE.Vector3(); bboxB.getCenter(centerB);
     meshB.position.add(centerA.clone().sub(centerB));
   } else {
-    // Face ↔ Face (modo "paralelas"): apenas rotação — faces ficam paralelas, sem alterar posição
+    // Face ↔ Face: roda meshB para a face oposta a faceA, depois encosta a face
+    // 1. Alinhar normal: face de B deve apontar na direção oposta a face de A
     const targetNormal = faceA.worldNormal.clone().negate();
-    const delta = new THREE.Quaternion().setFromUnitVectors(faceB.worldNormal, targetNormal);
-    meshB.quaternion.premultiply(delta);
+    const rotDelta = new THREE.Quaternion().setFromUnitVectors(
+      faceB.worldNormal.clone().normalize(),
+      targetNormal.normalize()
+    );
+    meshB.quaternion.premultiply(rotDelta);
     meshB.updateWorldMatrix(true, false);
-    // Move apenas o suficiente para as faces (planos) se tocarem, sem repositionamento lateral
-    // Projecção do ponto B no eixo da normal para calcular gap
-    const centerB = new THREE.Vector3();
-    new THREE.Box3().setFromObject(meshB).getCenter(centerB);
-    // distância entre o plano de A e o centro de B na direção da normal
-    const gapAlongNormal = faceA.worldNormal.clone().dot(faceA.worldPoint.clone().sub(centerB));
-    meshB.position.addScaledVector(faceA.worldNormal, gapAlongNormal);
+
+    // 2. Recalcular a posição do ponto de toque de B após a rotação
+    //    (o worldPoint de B estava antes da rotação, então recalculamos via bbox)
+    const bboxB = new THREE.Box3().setFromObject(meshB);
+    const centerB = new THREE.Vector3(); bboxB.getCenter(centerB);
+
+    // 3. Mover B de modo que a face de B toque na face de A
+    //    A face de A está no plano: normal·(x – faceA.worldPoint) = 0
+    //    Queremos que o extremo de B na direção de targetNormal toque esse plano
+    //    a. Distância do centro de B ao plano de A:
+    const distToPlane = faceA.worldNormal.dot(faceA.worldPoint.clone().sub(centerB));
+    //    b. Metade da extensão de B nessa direção (extent)
+    const sizeB = new THREE.Vector3(); bboxB.getSize(sizeB);
+    const halfExtent = Math.abs(faceA.worldNormal.dot(sizeB)) / 2;
+    //    c. Translation necessária para encostar as faces
+    const translation = distToPlane - halfExtent;
+    meshB.position.addScaledVector(faceA.worldNormal, translation);
+
+    // 4. Centralizar B no centro de A (dentro do plano)
+    meshB.updateWorldMatrix(true, false);
+    const bboxAfter = new THREE.Box3().setFromObject(meshB);
+    const newCenterB = new THREE.Vector3(); bboxAfter.getCenter(newCenterB);
+    const bboxA = new THREE.Box3().setFromObject(meshA);
+    const centerA = new THREE.Vector3(); bboxA.getCenter(centerA);
+    // Projetar o deslocamento centerA→newCenterB no plano da face (remover componente normal)
+    const lateralDiff = centerA.clone().sub(newCenterB);
+    const normalComp = faceA.worldNormal.clone().multiplyScalar(lateralDiff.dot(faceA.worldNormal));
+    lateralDiff.sub(normalComp); // remove componente na direção normal
+    meshB.position.add(lateralDiff);
   }
 
   persistTransform(faceB.shapeId, meshB);
@@ -383,6 +1283,7 @@ btnFaceSnap.addEventListener('click', () => {
   btnFaceSnap.classList.toggle('active', faceSnapActive);
   btnFaceSnap.textContent = faceSnapActive ? '🧲 Cancelar' : '🧲 Face Snap';
   setSnapStatus(faceSnapActive ? 'Clique na face do objeto A' : '', faceSnapActive);
+  if (!faceSnapActive) clearHoverHighlight();
   // desacopla TC para não interferir com a selecção de faces
   if (faceSnapActive) tc?.detach();
 });
@@ -416,6 +1317,39 @@ renderer.domElement.addEventListener('pointerup', (e: PointerEvent) => {
   if (hitId === undefined) return;
 
   if (faceSnapActive) {
+    // Testa planos de grid primeiro (podem ser usados como face A ou B)
+    const gridHitsPu = _clickRay.intersectObjects(originPlanes, false);
+    if (gridHitsPu.length > 0) {
+      const gHit = gridHitsPu[0];
+      const planeIdx = originPlanes.indexOf(gHit.object as THREE.Mesh);
+      const gridNormals = [new THREE.Vector3(0,1,0), new THREE.Vector3(0,0,1), new THREE.Vector3(1,0,0)];
+      const gNormal = gridNormals[planeIdx] ?? new THREE.Vector3(0,1,0);
+      const gridFace: FacePick = {
+        shapeId: -1, worldPoint: gHit.point.clone(), worldNormal: gNormal
+      };
+      if (!firstFacePick) {
+        firstFacePick = gridFace;
+        setSnapStatus('Clique na face do objeto B');
+      } else if (firstFacePick.shapeId !== -1) {
+        // faceA é um objeto 3D, faceB é um plano de grid
+        const meshA2 = shapeMap.get(firstFacePick.shapeId)!;
+        // Apenas translação: move A para tocar no plano do grid
+        const bboxA2 = new THREE.Box3().setFromObject(meshA2);
+        const cA2 = new THREE.Vector3(); bboxA2.getCenter(cA2);
+        const distA2 = gNormal.dot(gHit.point.clone().sub(cA2));
+        const sizeA2 = new THREE.Vector3(); bboxA2.getSize(sizeA2);
+        const halfA2 = Math.abs(gNormal.dot(sizeA2)) / 2;
+        meshA2.position.addScaledVector(gNormal, distA2 + halfA2);
+        persistTransform(firstFacePick.shapeId, meshA2);
+        clearFaceHighlight();
+        faceSnapActive = false; firstFacePick = null;
+        btnFaceSnap.classList.remove('active');
+        btnFaceSnap.textContent = '🧲 Face Snap';
+        setSnapStatus('', false);
+        clearHoverHighlight();
+      }
+      return;
+    }
     const worldNormal = hit.face!.normal.clone()
       .transformDirection(hitMesh.matrixWorld).normalize();
     if (!firstFacePick) {
@@ -425,7 +1359,7 @@ renderer.domElement.addEventListener('pointerup', (e: PointerEvent) => {
     } else if (hitId !== firstFacePick.shapeId) {
       const faceB = { shapeId: hitId, worldPoint: hit.point.clone(), worldNormal };
       applyFaceSnap(firstFacePick, faceB);
-      clearFaceHighlight();  // limpa o highlight da face A
+      clearFaceHighlight(); clearHoverHighlight();
       // Sai do modo snap
       faceSnapActive = false;
       firstFacePick  = null;
@@ -438,7 +1372,13 @@ renderer.domElement.addEventListener('pointerup', (e: PointerEvent) => {
     }
   } else {
     // Click normal: seleciona o shape clicado
-    selectShape(hitId);
+    // Com Shift: adiciona à seleção booleana (A/B)
+    if (e.shiftKey) {
+      addToSelection(hitId);
+    } else {
+      clearBoolSelection();
+      selectShape(hitId);
+    }
   }
 });
 
@@ -449,7 +1389,85 @@ renderer.domElement.addEventListener('click', (e: MouseEvent) => {
   if (dx * dx + dy * dy > 25) return; // foi drag
   const cm2 = new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
   _clickRay.setFromCamera(cm2, camera);
-  if (_clickRay.intersectObjects([...shapeMap.values()], false).length === 0) deselectAll();
+  if (_clickRay.intersectObjects([...shapeMap.values()], false).length === 0) {
+    clearBoolSelection();
+    deselectAll();
+  }
+});
+
+// ─── Hover face highlight durante faceSnap ────────────────────────────────────
+let _hoverHighlightMesh: THREE.Mesh | null = null;
+
+function clearHoverHighlight(): void {
+  if (!_hoverHighlightMesh) return;
+  scene.remove(_hoverHighlightMesh);
+  _hoverHighlightMesh.geometry.dispose();
+  (_hoverHighlightMesh.material as THREE.Material).dispose();
+  _hoverHighlightMesh = null;
+}
+
+function showHoverHighlight(hit: THREE.Intersection, isGridPlane = false): void {
+  clearHoverHighlight();
+  if (isGridPlane) {
+    // Simples quad para o plano do grid
+    const geo = new THREE.PlaneGeometry(60, 60);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xfbbf24, transparent: true, opacity: 0.22, depthTest: false, side: THREE.DoubleSide,
+    });
+    _hoverHighlightMesh = new THREE.Mesh(geo, mat);
+    _hoverHighlightMesh.position.copy((hit.object as THREE.Mesh).position);
+    _hoverHighlightMesh.quaternion.copy((hit.object as THREE.Mesh).quaternion);
+    scene.add(_hoverHighlightMesh);
+    return;
+  }
+  if (!hit.face) return;
+  const src = hit.object as THREE.Mesh;
+  const geo = src.geometry as THREE.BufferGeometry;
+  const posAttr = geo.getAttribute('position') as THREE.BufferAttribute;
+  const idxAttr = geo.getIndex();
+  const worldNormal = hit.face.normal.clone().transformDirection(src.matrixWorld).normalize();
+  const d = worldNormal.dot(hit.point);
+  const EPS = 0.01;
+  const faceVerts: number[] = [];
+  const triCount = idxAttr ? idxAttr.count / 3 : posAttr.count / 3;
+  const tA = new THREE.Vector3(), tB = new THREE.Vector3(), tC = new THREE.Vector3();
+  for (let t = 0; t < triCount; t++) {
+    const ia = idxAttr ? idxAttr.getX(t*3) : t*3;
+    const ib = idxAttr ? idxAttr.getX(t*3+1) : t*3+1;
+    const ic = idxAttr ? idxAttr.getX(t*3+2) : t*3+2;
+    tA.fromBufferAttribute(posAttr, ia).applyMatrix4(src.matrixWorld);
+    tB.fromBufferAttribute(posAttr, ib).applyMatrix4(src.matrixWorld);
+    tC.fromBufferAttribute(posAttr, ic).applyMatrix4(src.matrixWorld);
+    const e1 = tB.clone().sub(tA), e2 = tC.clone().sub(tA);
+    const tn = e1.cross(e2).normalize();
+    if (Math.abs(tn.dot(worldNormal)) > 1-EPS && Math.abs(worldNormal.dot(tA)-d) < EPS) {
+      faceVerts.push(tA.x,tA.y,tA.z, tB.x,tB.y,tB.z, tC.x,tC.y,tC.z);
+    }
+  }
+  if (!faceVerts.length) return;
+  const hlGeo = new THREE.BufferGeometry();
+  hlGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(faceVerts), 3));
+  const hlMat = new THREE.MeshBasicMaterial({
+    color: 0xfbbf24, transparent: true, opacity: 0.3, depthTest: false, side: THREE.DoubleSide,
+  });
+  _hoverHighlightMesh = new THREE.Mesh(hlGeo, hlMat);
+  _hoverHighlightMesh.position.addScaledVector(worldNormal, 0.5);
+  scene.add(_hoverHighlightMesh);
+}
+
+renderer.domElement.addEventListener('mousemove', (e: MouseEvent) => {
+  if (!faceSnapActive) { clearHoverHighlight(); return; }
+  const cm = new THREE.Vector2((e.clientX/innerWidth)*2-1, -(e.clientY/innerHeight)*2+1);
+  _clickRay.setFromCamera(cm, camera);
+  // Verifica planos de grid primeiro
+  const gridHits = _clickRay.intersectObjects(originPlanes, false);
+  if (gridHits.length > 0) {
+    showHoverHighlight(gridHits[0], true);
+    return;
+  }
+  const meshHits = _clickRay.intersectObjects([...shapeMap.values()], false);
+  if (meshHits.length > 0 && meshHits[0].face) showHoverHighlight(meshHits[0]);
+  else clearHoverHighlight();
 });
 
 // ─── Mouse tracking + Snap handler ───────────────────────────────────────────
@@ -545,6 +1563,36 @@ window.addEventListener('keydown', async (e: KeyboardEvent) => {
   }
 });
 
+// ─── Grid toggle button ───────────────────────────────────────────────────────
+const btnGridToggle = document.getElementById('btn-grid-toggle') as HTMLButtonElement;
+const gridConfigEl  = document.getElementById('grid-config')     as HTMLDivElement;
+btnGridToggle.addEventListener('click', () => {
+  const open = gridConfigEl.style.display !== 'none';
+  gridConfigEl.style.display = open ? 'none' : 'flex';
+  btnGridToggle.textContent  = open ? '⊞ Grid' : '⊟ Grid';
+  btnGridToggle.style.color  = open ? '' : '#6ee7f7';
+});
+
+// ─── Reset de transformação (botão ↩ 0 no TIB) ───────────────────────────────
+function resetTransform(): void {
+  if (selectedShapeId === null) return;
+  const mesh = shapeMap.get(selectedShapeId)!;
+  const mode = pendingTcMode;
+  if (mode === 'translate') {
+    mesh.position.set(0, 0, 0);
+  } else if (mode === 'rotate') {
+    mesh.rotation.set(0, 0, 0);
+  } else {
+    const orig = originalScales.get(selectedShapeId);
+    if (orig) mesh.scale.copy(orig);
+    else mesh.scale.set(1, 1, 1);
+  }
+  persistTransform(selectedShapeId, mesh);
+  tibTyped = false;
+  tibInput.value = '0';
+}
+tibReset.addEventListener('click', (e) => { e.stopPropagation(); resetTransform(); });
+
 // ─── Geometry helpers ─────────────────────────────────────────────────────────
 function updateStats() {
   const count = shapeMap.size;
@@ -597,6 +1645,7 @@ function spawnMesh(result: ShapeMesh): void {
   mesh.receiveShadow = true;
   scene.add(mesh);
   shapeMap.set(result.shape_id, mesh);
+  originalScales.set(result.shape_id, mesh.scale.clone()); // guarda escala original
   cadStore.setMatrix(result.shape_id, IDENTITY); // regista no histórico
 
   // Seleciona o shape recém-criado no TransformControls
@@ -661,3 +1710,17 @@ async function loadModel(): Promise<void> {
 
 btnEl.addEventListener('click', loadModel);
 loadModel();
+
+// ─── Render loop (DEVE ficar após todas as const, incluindo ViewCube) ──────────
+renderer.autoClear = false; // clear manual para compatibilidade com scissor
+(function animate() {
+  requestAnimationFrame(animate);
+  orbit.update();
+  renderer.setClearColor(_lightTheme ? 0xe8ecf0 : 0x0f1012, 1);
+  renderer.clear(true, true, false);
+  renderer.render(scene, camera);
+  updateInfoPanel();
+  updateOriginPlanes();
+  renderViewCube();
+})();
+
