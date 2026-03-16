@@ -35,6 +35,9 @@ int  transform_shape_c(int shape_id, const float* matrix16, OcctMesh* out);
 /* Remove o shape da store (liberta memória OCCT). */
 void remove_shape_c(int shape_id);
 
+/* Duplica o shape na store e devolve o novo shape_id (≥1) ou -1 em erro. */
+int  clone_shape_c(int shape_id, OcctMesh* out);
+
 /* ── Memoria ─────────────────────────────────────────────────────────────────── */
 void free_occt_mesh(OcctMesh* mesh);
 

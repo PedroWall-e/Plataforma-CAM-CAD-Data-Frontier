@@ -1,4 +1,7 @@
-// check-env.cjs — Pré-verificação e cópia automática de DLLs (OCCT + dependências)
+// check-env.cjs — Pré-verificação e cópia automática das DLLs do OCCT
+// Todas as dependências estão autocontidas em src-tauri/third_party/occt/
+'use strict';
+
 const fs   = require('fs');
 const path = require('path');
 const os   = require('os');
@@ -35,68 +38,35 @@ if (hasError) {
   process.exit(1);
 }
 
-// ── 2. Windows: copiar DLLs para os diretórios de runtime do Cargo ────────────
+// ── 2. Windows: copiar DLLs do OCCT para o diretório de runtime do Cargo ─────
 if (os.platform() === 'win32') {
+  const occtBin = path.join(occtPath, 'bin');
   const targets = [
     path.join(srcTauri, 'target', 'debug'),
     path.join(srcTauri, 'target', 'debug', 'deps'),
   ];
+
+  // Garante que as pastas de destino existam
   targets.forEach(d => fs.mkdirSync(d, { recursive: true }));
 
+  // Copia apenas as DLLs do OCCT (TK*.dll) — todas as dependências já estão
+  // autocontidas nesta distribuição (sem TBB, freetype ou outros externos).
+  const occtDlls = fs.readdirSync(occtBin).filter(f => f.toLowerCase().endsWith('.dll'));
   let totalCopied = 0;
 
-  // ── 2a. DLLs do OCCT (TK*.dll) ──────────────────────────────────────────────
-  const occtBin = path.join(occtPath, 'bin');
-  const occtDlls = fs.readdirSync(occtBin).filter(f => f.toLowerCase().endsWith('.dll'));
   occtDlls.forEach(dll => {
+    const src = path.join(occtBin, dll);
     targets.forEach(dest => {
-      try { fs.copyFileSync(path.join(occtBin, dll), path.join(dest, dll)); totalCopied++; }
-      catch (e) { /* silencioso — ficheiro em uso é ok */ }
+      try {
+        fs.copyFileSync(src, path.join(dest, dll));
+        totalCopied++;
+      } catch (_e) {
+        // Silencioso — ficheiro em uso é aceitável (já copiado antes)
+      }
     });
   });
-  console.log(`\n📦 OCCT: ${occtDlls.length} DLLs copiadas`);
 
-  // ── 2b. Dependências transitivas do OCCT (tbb12, freetype, jemalloc…) ────────
-  // TKernel.dll depende de: tbb12, tbbmalloc, jemalloc, freetype, freeimage
-  // Estas DLLs NÃO estão em occt/bin — vêm do Conda ou vcpkg.
-  const transitiveDlls = [
-    'tbb12.dll',
-    'tbb.dll',
-    'tbbmalloc.dll',
-    'tbbmalloc_proxy.dll',
-    'jemalloc.dll',      // ← alocador de memória usado pelo TKernel
-    'freetype.dll',      // ← renderização de fontes (TKService)
-    'freeimage.dll',     // ← suporte a imagens (TKService)
-  ];
-
-  // Ordem de prioridade: Conda hardcoded primeiro (path conhecido), depois PATH
-  const condaBase = 'C:\\Users\\Pedro\\miniconda3\\Library\\bin';
-  const searchDirs = [
-    condaBase,
-    path.join(process.env.USERPROFILE || '', 'miniconda3', 'Library', 'bin'),
-    path.join(process.env.USERPROFILE || '', 'anaconda3',  'Library', 'bin'),
-    'C:\\ProgramData\\miniconda3\\Library\\bin',
-    'C:\\conda\\Library\\bin',
-    'C:\\vcpkg\\installed\\x64-windows\\bin',
-    ...(process.env.PATH || '').split(';').filter(Boolean),
-  ];
-
-  let transitiveFound = 0;
-  transitiveDlls.forEach(dll => {
-    for (const dir of searchDirs) {
-      const src = path.join(dir, dll);
-      if (fs.existsSync(src)) {
-        targets.forEach(dest => {
-          try { fs.copyFileSync(src, path.join(dest, dll)); totalCopied++; }
-          catch (e) { /* silencioso */ }
-        });
-        transitiveFound++;
-        break; // encontrou — passa para o próximo dll
-      }
-    }
-  });
-  console.log(`📦 Transitivas: ${transitiveFound}/${transitiveDlls.length} DLLs encontradas e copiadas`);
-  console.log(`📦 Total: ${totalCopied} operações de cópia`);
+  console.log(`\n📦 OCCT: ${occtDlls.length} DLLs copiadas para target/debug (${totalCopied} ops)`);
 }
 
 console.log('\n🚀 Ambiente OK — iniciando Tauri…\n');

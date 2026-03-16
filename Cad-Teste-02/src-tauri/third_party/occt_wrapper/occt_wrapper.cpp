@@ -37,7 +37,7 @@ MeshDataC TesselateOcctShape(const TopoDS_Shape& shape, double deflection) {
         const int nbNodes     = tri->NbNodes();
         const int nbTriangles = tri->NbTriangles();
         const bool hasTrsf    = !loc.IsIdentity();
-        gp_Trsf trsf = hasTrsf ? loc.IsIdentity() ? gp_Trsf() : gp_Trsf() : gp_Trsf();
+        const gp_Trsf trsf    = hasTrsf ? loc.Transformation() : gp_Trsf();
 
         for (int i = 1; i <= nbNodes; ++i) {
             gp_Pnt p = tri->Node(i);

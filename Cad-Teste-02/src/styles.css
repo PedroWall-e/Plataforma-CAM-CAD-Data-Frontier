@@ -1,0 +1,138 @@
+/* src/styles.css — CAD MVP styles */
+
+/* ── Reset ─────────────────────────────────────────────────────────────────── */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0f1012; overflow: hidden; font-family: system-ui, sans-serif; }
+#viewport { width: 100vw; height: 100vh; }
+
+/* ── HUD ───────────────────────────────────────────────────────────────────── */
+#hud {
+  position: fixed; top: 0; left: 0; right: 0;
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 22px;
+  background: linear-gradient(180deg, rgba(15,16,18,.92) 0%, transparent 100%);
+  pointer-events: none;
+}
+#hud h1 {
+  font-size: 14px; font-weight: 600; letter-spacing: .06em;
+  background: linear-gradient(90deg, #6ee7f7, #a78bfa);
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+#stats { font-size: 11px; color: #555; }
+
+/* ── Painel de controlo ────────────────────────────────────────────────────── */
+#controls {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 10px; align-items: flex-end;
+  background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08);
+  border-radius: 14px; padding: 16px 22px; backdrop-filter: blur(12px);
+  flex-wrap: wrap; justify-content: center; max-width: 90vw;
+}
+
+/* ── Base button (shared por prim-btn, tr-btn, face-snap, qualquer botão sem ID custom) */
+button {
+  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1);
+  border-radius: 8px; color: #9ca3af; font-size: 12px; padding: 6px 13px;
+  cursor: pointer; transition: all .15s; font-family: inherit;
+}
+button:hover { background: rgba(255,255,255,.1); color: #e0e0e0; }
+
+/* ── Selector de primitiva ──────────────────────────────────────────────────── */
+#prim-selector { display: flex; gap: 6px; align-self: center; }
+
+.prim-btn.active {
+  background: linear-gradient(135deg,rgba(110,231,247,.15),rgba(167,139,250,.15));
+  border-color: #6ee7f7; color: #6ee7f7;
+}
+
+/* ── Transform-mode buttons ─────────────────────────────────────────────────── */
+.tr-btn.active {
+  background: linear-gradient(135deg,rgba(251,191,36,.15),rgba(249,115,22,.15));
+  border-color: #fbbf24; color: #fbbf24;
+}
+
+/* ── Separador ──────────────────────────────────────────────────────────────── */
+.sep { width: 1px; background: rgba(255,255,255,.08); align-self: stretch; margin: 0 4px; }
+
+/* ── Inputs ─────────────────────────────────────────────────────────────────── */
+.ctrl { display: flex; flex-direction: column; gap: 4px; }
+.ctrl label { font-size: 10px; color: #777; letter-spacing: .08em; text-transform: uppercase; }
+.ctrl input {
+  width: 68px; background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.1); border-radius: 7px;
+  color: #e0e0e0; font-size: 13px; padding: 5px 9px; outline: none;
+}
+.ctrl input:focus { border-color: #6ee7f7; }
+
+/* ── Botão Generate ─────────────────────────────────────────────────────────── */
+#btn {
+  padding: 7px 20px; background: linear-gradient(135deg, #6ee7f7, #a78bfa);
+  border: none; border-radius: 9px; color: #0f1012; font-weight: 700;
+  font-size: 13px; cursor: pointer; align-self: flex-end;
+}
+#btn:disabled { opacity: .5; cursor: default; }
+
+/* ── Botão Delete ────────────────────────────────────────────────────────────── */
+#btn-delete {
+  padding: 7px 14px; align-self: flex-end;
+  background: rgba(180,30,50,.18); border-color: rgba(220,50,70,.35); color: #f87171;
+}
+#btn-delete:hover { background: rgba(220,50,70,.32); color: #fca5a5; }
+
+/* ── Face Snap active state ──────────────────────────────────────────────────── */
+#btn-face-snap.active {
+  background: linear-gradient(135deg,rgba(167,139,250,.2),rgba(110,231,247,.1));
+  border-color: #a78bfa; color: #a78bfa;
+}
+
+/* ── Select ──────────────────────────────────────────────────────────────────── */
+select {
+  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1);
+  border-radius: 7px; color: #9ca3af; font-size: 12px; padding: 5px 8px;
+  cursor: pointer; outline: none; transition: border-color .15s; font-family: inherit;
+}
+select:focus { border-color: #6ee7f7; }
+select option { background: #1a1c20; color: #e0e0e0; }
+
+/* ── Snap status ─────────────────────────────────────────────────────────────── */
+#snap-status { font-size: 11px; color: #a78bfa; display: none; animation: blink 1.4s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.45} }
+
+/* ── Error log ──────────────────────────────────────────────────────────────── */
+#error-log {
+  position: fixed; bottom: 110px; left: 50%; transform: translateX(-50%);
+  background: rgba(200,30,30,.9); color: #fff; padding: 10px 18px;
+  border-radius: 8px; font-size: 12px; max-width: 600px;
+  word-break: break-word; display: none; z-index: 100;
+}
+
+/* ── Unit selector (topo direito) ────────────────────────────────────────────── */
+#unit-selector { display: flex; gap: 4px; pointer-events: all; }
+.unit-btn { font-size: 11px; padding: 3px 9px; border-radius: 6px; }
+.unit-btn.active { background: rgba(110,231,247,.18); border-color: #6ee7f7; color: #6ee7f7; }
+
+/* ── Painel de info do objeto ────────────────────────────────────────────────── */
+#obj-info {
+  position: fixed; top: 56px; right: 20px;
+  background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08);
+  border-radius: 10px; padding: 10px 14px; backdrop-filter: blur(10px);
+  font-size: 11px; color: #9ca3af; display: flex; flex-direction: column; gap: 4px;
+  pointer-events: none; min-width: 200px;
+}
+.info-row { display: flex; gap: 8px; align-items: baseline; }
+.info-lbl { color: #444; text-transform: uppercase; letter-spacing: .08em; font-size: 9px; min-width: 28px; }
+
+/* ── Transform Input overlay ─────────────────────────────────────────────────── */
+#transform-input {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  background: rgba(15,16,18,.95); border: 1px solid rgba(110,231,247,.4);
+  border-radius: 10px; padding: 14px 18px; display: flex; gap: 8px; align-items: center;
+  z-index: 200; box-shadow: 0 0 30px rgba(110,231,247,.12);
+}
+#transform-input label { font-size: 12px; color: #6ee7f7; min-width: 60px; }
+#transform-input input { width: 90px; }
+#transform-input-ok { color: #6ee7f7; border-color: rgba(110,231,247,.4); }
+
+/* ── Floor button ────────────────────────────────────────────────────────────── */
+#btn-floor { color: #60a5fa; border-color: rgba(96,165,250,.35); }
+#btn-floor:hover { background: rgba(96,165,250,.15); color: #93c5fd; }
