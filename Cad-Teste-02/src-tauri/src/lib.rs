@@ -40,6 +40,10 @@ unsafe extern "C" {
     // Shell (casca oca)
     fn shell_c(shape_id: i32, thickness: f32, out: *mut OcctMesh) -> i32;
 
+    // Export
+    fn export_stl_c (shape_id: i32, path: *const std::ffi::c_char) -> i32;
+    fn export_step_c(shape_id: i32, path: *const std::ffi::c_char) -> i32;
+
     fn free_occt_mesh(mesh: *mut OcctMesh);
 }
 
@@ -252,6 +256,24 @@ fn shell_shape(shape_id: i32, thickness: f32) -> Result<ShapeMesh, String> {
     }
 }
 
+/// Exporta shape como STL no caminho especificado.
+#[tauri::command]
+fn export_stl(shape_id: i32, path: String) -> Result<(), String> {
+    use std::ffi::CString;
+    let c_path = CString::new(path.as_str()).map_err(|e| e.to_string())?;
+    let ok = unsafe { export_stl_c(shape_id, c_path.as_ptr()) };
+    if ok < 0 { Err(format!("export_stl falhou para shape {}", shape_id)) } else { Ok(()) }
+}
+
+/// Exporta shape como STEP no caminho especificado.
+#[tauri::command]
+fn export_step(shape_id: i32, path: String) -> Result<(), String> {
+    use std::ffi::CString;
+    let c_path = CString::new(path.as_str()).map_err(|e| e.to_string())?;
+    let ok = unsafe { export_step_c(shape_id, c_path.as_ptr()) };
+    if ok < 0 { Err(format!("export_step falhou para shape {}", shape_id)) } else { Ok(()) }
+}
+
 // ─── Bootstrap ────────────────────────────────────────────────────────────────
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -262,6 +284,7 @@ pub fn run() {
             transform_shape, delete_shape, clone_shape,
             boolean_union, boolean_cut, boolean_intersect,
             fillet_shape, chamfer_shape, shell_shape,
+            export_stl, export_step,
         ])
         .run(tauri::generate_context!())
         .expect("Erro ao iniciar a aplicação Tauri");

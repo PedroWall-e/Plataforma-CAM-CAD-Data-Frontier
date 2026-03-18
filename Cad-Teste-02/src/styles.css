@@ -386,3 +386,131 @@ select option { background: #1a1c20; color: #e0e0e0; }
 /* Light theme overrides */
 body.light-theme #ops-tab  { background: rgba(255,255,255,.9); }
 body.light-theme .bool-btn { background: rgba(0,100,200,.08); border-color: rgba(0,100,200,.3); color: #005bcc; }
+
+/* ═══ Painel Direito — Árvore de Cena + Histórico ═══════════════════════════ */
+
+#history-tab {
+  position: fixed; right: 0; top: 50%; transform: translateY(-50%);
+  z-index: 30; width: 36px; height: 36px;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-right: none; border-radius: 8px 0 0 8px;
+  font-size: 16px; padding: 0; cursor: pointer; color: var(--fg);
+  transition: background .15s, transform .15s;
+  display: flex; align-items: center; justify-content: center;
+}
+#history-tab:hover { background: var(--input-bg); transform: translateY(-50%) translateX(-2px); }
+
+#history-panel {
+  position: fixed; right: 0; top: 50%; transform: translateY(-50%) translateX(105%);
+  z-index: 29; width: 260px; max-height: 82vh; overflow: hidden;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 14px 0 0 14px; backdrop-filter: blur(14px);
+  display: flex; flex-direction: column;
+  transition: transform .25s cubic-bezier(.22,.68,0,1.2);
+  box-shadow: -4px 0 24px rgba(0,0,0,.4);
+}
+#history-panel.open { transform: translateY(-50%) translateX(0); }
+
+/* Abas dentro do painel direito */
+.hist-tabs {
+  display: flex; border-bottom: 1px solid var(--border);
+}
+.hist-tab-btn {
+  flex: 1; padding: 7px 4px; font-size: 11px; font-weight: 600;
+  background: transparent; border: none; border-radius: 0;
+  color: var(--muted); cursor: pointer; transition: color .15s, background .15s;
+}
+.hist-tab-btn.active { color: var(--accent); background: rgba(110,231,247,.06); border-bottom: 2px solid var(--accent); }
+.hist-tab-content { display: none; flex-direction: column; overflow-y: auto; flex: 1; }
+.hist-tab-content.active { display: flex; }
+
+/* ── Árvore de Cena ── */
+.scene-toolbar {
+  display: flex; gap: 4px; padding: 6px 10px; border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.scene-toolbar button { font-size: 10px; padding: 3px 7px; }
+
+#scene-tree {
+  list-style: none; margin: 0; padding: 4px 0; overflow-y: auto; flex: 1;
+}
+.tree-project {
+  padding: 6px 10px 4px; font-size: 10px; font-weight: 700;
+  color: var(--accent); letter-spacing: .08em; text-transform: uppercase;
+  border-bottom: 1px solid var(--border); margin-bottom: 2px;
+}
+.tree-folder { list-style: none; }
+.tree-folder-toggle {
+  width: 100%; text-align: left; padding: 4px 10px;
+  font-size: 11px; font-weight: 600; color: var(--fg);
+  background: transparent; border: none; cursor: pointer;
+  display: flex; align-items: center; gap: 5px;
+}
+.tree-folder-toggle::before { content: '▾'; font-size: 9px; transition: transform .15s; }
+.tree-folder-toggle.collapsed::before { transform: rotate(-90deg); }
+.tree-folder-body { list-style: none; padding: 0; }
+.tree-folder-body.collapsed { display: none; }
+
+.tree-item {
+  display: flex; align-items: center; padding: 3px 8px 3px 20px;
+  cursor: pointer; border-radius: 5px; margin: 1px 4px;
+  font-size: 11px; color: var(--fg); gap: 6px;
+  transition: background .1s;
+}
+.tree-item:hover { background: rgba(255,255,255,.05); }
+.tree-item.selected { background: rgba(110,231,247,.12); color: #6ee7f7; }
+.tree-item.deleted { opacity: .4; text-decoration: line-through; }
+.tree-item-icon { flex-shrink: 0; font-size: 13px; }
+.tree-item-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tree-item-name input {
+  width: 100%; background: var(--input-bg); border: 1px solid var(--accent);
+  border-radius: 3px; color: var(--fg); font-size: 11px; padding: 1px 4px; outline: none;
+}
+.tree-item-actions { display: flex; gap: 2px; opacity: 0; transition: opacity .1s; }
+.tree-item:hover .tree-item-actions { opacity: 1; }
+.tree-item-actions button { padding: 1px 4px; font-size: 9px; color: var(--muted); }
+.tree-item-id { font-size: 9px; color: var(--muted); flex-shrink: 0; }
+
+/* ── Histórico ── */
+.hist-list {
+  list-style: none; margin: 0; padding: 4px 0; overflow-y: auto; flex: 1;
+}
+.hist-empty { padding: 16px 14px; font-size: 10px; color: var(--muted); text-align: center; }
+.hist-count-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--accent); color: #000; border-radius: 10px;
+  font-size: 9px; font-weight: 700; min-width: 16px; height: 16px; padding: 0 4px;
+}
+.hist-group { list-style: none; }
+.hist-group-toggle {
+  width: 100%; text-align: left; padding: 5px 10px;
+  font-size: 10px; font-weight: 700; letter-spacing: .05em;
+  color: var(--muted); background: transparent; border: none; cursor: pointer;
+  display: flex; justify-content: space-between;
+}
+.hist-group-toggle::after { content: '▾'; transition: transform .15s; }
+.hist-group-toggle[aria-expanded="false"]::after { transform: rotate(-90deg); }
+.hist-group-body { list-style: none; padding: 0; }
+.hist-group-body.collapsed { display: none; }
+.hist-entry {
+  display: flex; align-items: center; padding: 5px 10px 5px 8px;
+  cursor: pointer; border-radius: 5px; margin: 1px 4px; gap: 7px;
+  transition: background .1s;
+}
+.hist-entry:hover     { background: rgba(255,255,255,.05); }
+.hist-entry.selected  { background: rgba(110,231,247,.12); }
+.hist-entry.deleted   { opacity: .45; }
+.hist-icon { font-size: 14px; flex-shrink: 0; }
+.hist-info { flex: 1; display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
+.hist-name { font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hist-meta { font-size: 9px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hist-badge { font-size: 9px; color: var(--muted); flex-shrink: 0; font-family: monospace; }
+
+/* Barra inferior — Salvar/Exportar */
+.panel-footer {
+  border-top: 1px solid var(--border); padding: 7px 10px;
+  display: flex; gap: 5px; flex-wrap: wrap;
+}
+.panel-footer button { flex: 1; font-size: 10px; padding: 4px 6px; min-width: 50px; }
+
+body.light-theme #history-tab { background: rgba(255,255,255,.9); }

@@ -6,6 +6,8 @@ import { TransformControls } from 'three/examples/jsm/controls/TransformControls
 import { invoke }           from '@tauri-apps/api/core';
 import { initBVH, disposeBVH, computeSnap } from './snap.js';
 import { cadStore, IDENTITY }               from './store.js';
+import { historyAdd, historyMarkDeleted, historyClear, _renderHistory } from './history.js';
+import { sceneAddShape, sceneRemoveShape, renderSceneTree, sceneGetByShapeId, setSceneCallbacks, sceneAddFolder } from './scene-tree.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface MeshData  { vertices: number[]; indices: number[]; }
@@ -1202,6 +1204,9 @@ async function deleteSelected(): Promise<void> {
   scene.remove(mesh);
   shapeMap.delete(id);
   cadStore.removeShape(id);
+  // Remove da árvore e do histórico
+  sceneRemoveShape(id);
+  historyMarkDeleted(id);
   try { await invoke('delete_shape', { shapeId: id }); } catch { /* silencioso */ }
   updateStats();
 }
@@ -1626,8 +1631,12 @@ export function updateGeometry(mesh: THREE.Mesh, data: MeshData): void {
   old.dispose();
 }
 
+/** Ícones e labels por tipo de primitiva */
+const PRIM_ICONS: Record<string, string> = { box:'📦', cylinder:'🔵', sphere:'⚽', cone:'🔺' };
+let _lastPrimLabel = 'Shape'; // definido antes de spawnMesh ser chamado
+
 /** Adiciona (ou substitui) um shape no Map e na cena. */
-function spawnMesh(result: ShapeMesh): void {
+function spawnMesh(result: ShapeMesh, label?: string, icon?: string): void {
   // Se já existe um mesh com esse ID (re-generate do mesmo shape), descarta o antigo
   const existing = shapeMap.get(result.shape_id);
   if (existing) {
@@ -1648,9 +1657,23 @@ function spawnMesh(result: ShapeMesh): void {
   originalScales.set(result.shape_id, mesh.scale.clone()); // guarda escala original
   cadStore.setMatrix(result.shape_id, IDENTITY); // regista no histórico
 
+  // ── Árvore de cena + Histórico ──────────────────────────────────────────────
+  const itemIcon  = icon  ?? PRIM_ICONS[activePrim] ?? '📦';
+  const itemLabel = label ?? _lastPrimLabel ?? 'Shape';
+  if (!existing) {
+    sceneAddShape(result.shape_id, itemLabel, itemIcon);
+  }
+
   // Seleciona o shape recém-criado no TransformControls
   selectedShapeId = result.shape_id;
   (getTC() as any).attach(mesh);
+
+  // Sincroniza seleção na árvore
+  const stNode = sceneGetByShapeId(result.shape_id);
+  if (stNode) {
+    document.querySelectorAll('.tree-item.selected').forEach(el => el.classList.remove('selected'));
+    document.querySelector(`[data-node-id="${stNode.id}"]`)?.classList.add('selected');
+  }
 
   updateStats();
 }
@@ -1666,24 +1689,31 @@ async function loadModel(): Promise<void> {
   btnEl.textContent = 'Generating…';
   try {
     let result: ShapeMesh;
+    let label = 'Shape';
     switch (activePrim) {
       case 'box': {
         const width = toMM(getNum('box-w')), height = toMM(getNum('box-h')), depth = toMM(getNum('box-d'));
         if ([width, height, depth].some(v => isNaN(v) || v <= 0))
           throw new Error('W/H/D devem ser > 0');
         result = await invoke<ShapeMesh>('create_box', { width, height, depth });
+        label = `Caixa ${getNum('box-w')}×${getNum('box-h')}×${getNum('box-d')}`;
+        historyAdd('box', label, result.shape_id, { W: getNum('box-w'), H: getNum('box-h'), D: getNum('box-d') });
         break;
       }
       case 'cylinder': {
         const radius = toMM(getNum('cyl-r')), height = toMM(getNum('cyl-h'));
         if (radius <= 0 || height <= 0) throw new Error('Radius/Height > 0');
         result = await invoke<ShapeMesh>('create_cylinder', { radius, height });
+        label = `Cilindro R${getNum('cyl-r')} H${getNum('cyl-h')}`;
+        historyAdd('cylinder', label, result.shape_id, { R: getNum('cyl-r'), H: getNum('cyl-h') });
         break;
       }
       case 'sphere': {
         const radius = toMM(getNum('sph-r'));
         if (radius <= 0) throw new Error('Radius > 0');
         result = await invoke<ShapeMesh>('create_sphere', { radius });
+        label = `Esfera R${getNum('sph-r')}`;
+        historyAdd('sphere', label, result.shape_id, { R: getNum('sph-r') });
         break;
       }
       case 'cone': {
@@ -1693,11 +1723,14 @@ async function loadModel(): Promise<void> {
         if (radiusBottom <= 0 || height <= 0)
           throw new Error('R Bottom/Height > 0 (R Top pode ser 0)');
         result = await invoke<ShapeMesh>('create_cone', { radiusBottom, radiusTop, height });
+        label = `Cone Rb${getNum('cone-rb')} Rt${getNum('cone-rt')} H${getNum('cone-h')}`;
+        historyAdd('cone', label, result.shape_id, { Rb: getNum('cone-rb'), Rt: getNum('cone-rt'), H: getNum('cone-h') });
         break;
       }
       default:
         throw new Error(`Primitiva desconhecida: ${activePrim}`);
     }
+    _lastPrimLabel = label;
     spawnMesh(result!);
   } catch (err: unknown) {
     showError(`${activePrim}: ${err instanceof Error ? err.message : String(err)}`);
@@ -1710,6 +1743,132 @@ async function loadModel(): Promise<void> {
 
 btnEl.addEventListener('click', loadModel);
 loadModel();
+
+// ─── Painel Direito — Toggle + Abas ─────────────────────────────────────────
+const _histPanel = document.getElementById('history-panel') as HTMLElement | null;
+const _histTab   = document.getElementById('history-tab')   as HTMLButtonElement | null;
+
+function toggleHistPanel(open?: boolean): void {
+  if (!_histPanel) return;
+  const isOpen    = _histPanel.classList.contains('open');
+  const shouldOpen = open ?? !isOpen;
+  _histPanel.classList.toggle('open', shouldOpen);
+  if (_histTab) _histTab.style.right = shouldOpen ? '260px' : '0';
+}
+
+_histTab?.addEventListener('click', () => toggleHistPanel());
+document.getElementById('history-close')?.addEventListener('click', () => toggleHistPanel(false));
+
+// Abas: Cena / Histórico
+document.querySelectorAll('.hist-tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tab = (btn as HTMLElement).dataset.tab;
+    document.querySelectorAll('.hist-tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.hist-tab-content').forEach(el => el.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(`tab-${tab}`)?.classList.add('active');
+    if (tab === 'hist') _renderHistory();
+    if (tab === 'scene') renderSceneTree();
+  });
+});
+
+// Árvore: callbacks
+setSceneCallbacks(
+  node => { if (node.shapeId != null) selectShape(node.shapeId); },
+  node => { if (node.shapeId != null) { selectedShapeId = node.shapeId; deleteSelected(); } },
+  (_node, _name) => { /* renomeio já tratado internamente */ },
+);
+
+// Árvore: Nova Pasta
+document.getElementById('st-new-folder')?.addEventListener('click', () => sceneAddFolder());
+// Árvore: Renomear selecionado
+document.getElementById('st-rename')?.addEventListener('click', () => {
+  const node = sceneGetByShapeId(selectedShapeId ?? -1);
+  if (!node) return;
+  // Simula double-click forçando o modo de edição
+  const el = document.querySelector(`[data-node-id="${node.id}"] .tree-item-name`) as HTMLElement | null;
+  el?.dispatchEvent(new MouseEvent('dblclick'));
+});
+// Árvore: Delete selecionado
+document.getElementById('st-delete-sel')?.addEventListener('click', () => deleteSelected());
+
+// Histórico: Limpar
+document.getElementById('history-clear')?.addEventListener('click', () => { historyClear(); });
+
+// ─── Ctrl+C / Ctrl+V (Clone) ─────────────────────────────────────────────────
+let _copiedShapeId: number | null = null;
+
+window.addEventListener('keydown', async (e: KeyboardEvent) => {
+  if (!(e.ctrlKey || e.metaKey)) return;
+  if (e.key === 'c' && selectedShapeId !== null) {
+    _copiedShapeId = selectedShapeId;
+    console.log('[CAD] Copiado shape', _copiedShapeId);
+    e.preventDefault();
+  } else if (e.key === 'v' && _copiedShapeId !== null) {
+    e.preventDefault();
+    try {
+      const result = await invoke<ShapeMesh>('clone_shape', { shapeId: _copiedShapeId });
+      _lastPrimLabel = (sceneGetByShapeId(_copiedShapeId)?.name ?? 'Shape') + ' (cópia)';
+      spawnMesh(result, _lastPrimLabel, '⧉');
+      // Deslocamento leve para não sobrepor
+      const mesh = shapeMap.get(result.shape_id);
+      if (mesh) { mesh.position.x += 20; mesh.position.z += 20; persistTransform(result.shape_id, mesh); }
+      historyAdd('clone', _lastPrimLabel, result.shape_id, { de: _copiedShapeId });
+    } catch (err) { showError(`Clone falhou: ${err instanceof Error ? err.message : String(err)}`); }
+  }
+});
+
+// ─── Salvar / Abrir Projeto ──────────────────────────────────────────────────
+document.getElementById('btn-save-project')?.addEventListener('click', async () => {
+  try {
+    const data = JSON.stringify({ version: 1, matrices: cadStore.getMatrices() }, null, 2);
+    // Download direto no browser (funciona sem plugin)
+    const blob = new Blob([data], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = 'projeto.cadproj'; a.click();
+    URL.revokeObjectURL(url);
+    console.log('[CAD] Projeto salvo via download');
+  } catch (err) { showError(`Salvar falhou: ${err}`); }
+});
+
+document.getElementById('btn-open-project')?.addEventListener('click', () => {
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = '.cadproj,application/json';
+  inp.onchange = async () => {
+    const file = inp.files?.[0]; if (!file) return;
+    try {
+      const text = await file.text();
+      const proj = JSON.parse(text);
+      console.log('[CAD] Projeto aberto:', proj);
+      // TODO: restaurar shapes do projeto (Fase 3.1 DAG)
+      showError('Abrir projeto: suporte completo na Fase 3.1 (DAG). Matrizes carregadas.');
+    } catch (err) { showError(`Abrir falhou: ${err}`); }
+  };
+  inp.click();
+});
+
+// ─── Export STL ──────────────────────────────────────────────────────────────
+document.getElementById('btn-export-stl')?.addEventListener('click', async () => {
+  if (selectedShapeId === null) { showError('Selecione um shape para exportar STL'); return; }
+  try {
+    const path = prompt('Caminho para salvar STL (ex: C:/minha-peca.stl):');
+    if (!path?.trim()) return;
+    await invoke('export_stl', { shapeId: selectedShapeId, path: path.trim() });
+    console.log('[CAD] STL exportado:', path);
+  } catch (err) { showError(`Export STL: ${err instanceof Error ? err.message : String(err)}`); }
+});
+
+// ─── Export STEP ─────────────────────────────────────────────────────────────
+document.getElementById('btn-export-step')?.addEventListener('click', async () => {
+  if (selectedShapeId === null) { showError('Selecione um shape para exportar STEP'); return; }
+  try {
+    const path = prompt('Caminho para salvar STEP (ex: C:/minha-peca.step):');
+    if (!path?.trim()) return;
+    await invoke('export_step', { shapeId: selectedShapeId, path: path.trim() });
+    console.log('[CAD] STEP exportado:', path);
+  } catch (err) { showError(`Export STEP: ${err instanceof Error ? err.message : String(err)}`); }
+});
 
 // ─── Render loop (DEVE ficar após todas as const, incluindo ViewCube) ──────────
 renderer.autoClear = false; // clear manual para compatibilidade com scissor

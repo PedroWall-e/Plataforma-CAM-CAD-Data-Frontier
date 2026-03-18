@@ -37,10 +37,15 @@ fn main() {
         "TKPrim",
         "TKMesh",
         "TKShHealing",
-        // Fase 2: Booleanas, Fillet/Chamfer, Shell
-        "TKBool",    // BRepAlgoAPI_Fuse / Cut / Common
+        // Fase 2: Booleanas (TKBO = BRepAlgoAPI 7.x), Fillet/Chamfer, Shell
+        "TKBO",      // BRepAlgoAPI_Fuse / Cut / Common  ← módulo correto OCCT 7.x
+        "TKBool",    // dependência interna do TKBO (BRepAlgo, BRepFeat)
+        "TKFeat",    // BRepFeat — dependência do TKBool
         "TKFillet",  // BRepFilletAPI_MakeFillet / MakeChamfer
         "TKOffset",  // BRepOffsetAPI_MakeThickSolid
+        // Fase 3.2: Export STL/STEP
+        "TKDESTL",   // StlAPI_Writer
+        "TKDESTEP",  // STEPControl_Writer
     ] {
         println!("cargo:rustc-link-lib={}", lib);
     }

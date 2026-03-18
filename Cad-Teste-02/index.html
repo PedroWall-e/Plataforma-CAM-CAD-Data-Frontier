@@ -234,5 +234,55 @@
     </section>
   </aside>
 
+  <!-- ═══ Painel Direito — Árvore de Cena + Histórico ════════════════════════ -->
+  <button id="history-tab" title="Árvore de Cena / Histórico">🌳</button>
+
+  <aside id="history-panel" aria-label="Árvore de Cena e Histórico">
+    <header class="ops-header">
+      <span>📐 Projeto</span>
+      <div style="display:flex;gap:5px">
+        <span id="history-count" class="hist-count-badge" style="display:none">0</span>
+        <button id="history-close" title="Fechar painel">✕</button>
+      </div>
+    </header>
+
+    <!-- Abas -->
+    <div class="hist-tabs">
+      <button class="hist-tab-btn active" data-tab="scene">🌳 Cena</button>
+      <button class="hist-tab-btn"        data-tab="hist" >📋 Histórico</button>
+    </div>
+
+    <!-- Aba: Árvore de Cena -->
+    <div class="hist-tab-content active" id="tab-scene">
+      <div class="scene-toolbar">
+        <button id="st-new-folder"  title="Nova pasta">📁 Pasta</button>
+        <button id="st-rename"      title="Renomear selecionado">✏</button>
+        <button id="st-delete-sel"  title="Deletar selecionado">🗑</button>
+      </div>
+      <ul id="scene-tree">
+        <li class="tree-project" id="tree-project-label">📐 Projeto</li>
+        <!-- items injetados por scene-tree.ts -->
+      </ul>
+    </div>
+
+    <!-- Aba: Histórico -->
+    <div class="hist-tab-content" id="tab-hist">
+      <div class="scene-toolbar">
+        <button id="history-clear" style="flex:1">⊘ Limpar histórico</button>
+      </div>
+      <ul id="history-list" class="hist-list">
+        <li class="hist-empty">Nenhuma operação ainda</li>
+      </ul>
+    </div>
+
+    <!-- Rodapé: Salvar / Exportar -->
+    <div class="panel-footer">
+      <button id="btn-save-project"  title="Salvar projeto (JSON)">💾 Salvar</button>
+      <button id="btn-open-project"  title="Abrir projeto (JSON)">📂 Abrir</button>
+      <button id="btn-export-stl"    title="Exportar STL">⬇ STL</button>
+      <button id="btn-export-step"   title="Exportar STEP">⬇ STEP</button>
+    </div>
+  </aside>
+
   </body>
 </html>

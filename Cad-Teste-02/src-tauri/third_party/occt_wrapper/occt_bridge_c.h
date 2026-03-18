@@ -54,6 +54,10 @@ int chamfer_all_c(int shape_id, float dist,   OcctMesh* out);
 /* Remove a face superior (max Y) e aplica espessura inward. Retorna shape_id.  */
 int shell_c(int shape_id, float thickness, OcctMesh* out);
 
+/* ── Export ────────────────────────────────────────────────── */
+int export_stl_c (int shape_id, const char* path); /* 0=ok, -1=erro */
+int export_step_c(int shape_id, const char* path); /* 0=ok, -1=erro */
+
 /* ── Memoria ─────────────────────────────────────────────────────────────────── */
 void free_occt_mesh(OcctMesh* mesh);
 

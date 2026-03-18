@@ -28,6 +28,9 @@
 #include <GProp_GProps.hxx>
 #include <BRepGProp.hxx>
 #include <TopoDS.hxx>
+// Export
+#include <StlAPI_Writer.hxx>
+#include <STEPControl_Writer.hxx>
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Shape.hxx>
@@ -399,6 +402,32 @@ int shell_c(int shape_id, float thickness, OcctMesh* out) {
         return shape_id;
     } catch (const Standard_Failure&) { return -1; }
       catch (const std::exception&)   { return -1; }
+}
+
+// ─── Export STL ──────────────────────────────────────────────────────────────
+int export_stl_c(int shape_id, const char* path) {
+    auto it = g_shapes.find(shape_id);
+    if (it == g_shapes.end() || !path) return -1;
+    try {
+        StlAPI_Writer writer;
+        // ASCII=false → binário (menor); ASCII=true → texto legível
+        writer.ASCIIMode() = Standard_False;
+        if (!writer.Write(it->second, path)) return -1;
+        return 0;
+    } catch (...) { return -1; }
+}
+
+// ─── Export STEP ─────────────────────────────────────────────────────────────
+int export_step_c(int shape_id, const char* path) {
+    auto it = g_shapes.find(shape_id);
+    if (it == g_shapes.end() || !path) return -1;
+    try {
+        STEPControl_Writer writer;
+        IFSelect_ReturnStatus status = writer.Transfer(it->second, STEPControl_AsIs);
+        if (status != IFSelect_RetDone) return -1;
+        if (writer.Write(path) != IFSelect_RetDone) return -1;
+        return 0;
+    } catch (...) { return -1; }
 }
 
 } /* extern "C" */

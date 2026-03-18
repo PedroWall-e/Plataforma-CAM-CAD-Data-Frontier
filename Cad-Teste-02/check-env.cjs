@@ -42,12 +42,8 @@ if (hasError) {
 if (os.platform() === 'win32') {
   const occtBin = path.join(occtPath, 'bin');
   const targets = [
-    // Target original (dentro do OneDrive — mantido por compatibilidade)
     path.join(srcTauri, 'target', 'debug'),
     path.join(srcTauri, 'target', 'debug', 'deps'),
-    // ⚠️ Novo target-dir fora do OneDrive (configurado em .cargo/config.toml)
-    'C:/cargo-target/cad-cad/debug',
-    'C:/cargo-target/cad-cad/debug/deps',
   ];
 
   // Garante que as pastas de destino existam
