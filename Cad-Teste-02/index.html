@@ -212,8 +212,23 @@
           <input id="fillet-radius" type="number" value="3" min="0.1" step="0.5" class="ops-input"/>
         </div>
         <div class="ops-btns">
-          <button id="btn-fillet"  title="Arredondar arestas — BRepFilletAPI_MakeFillet">◉ Fillet</button>
-          <button id="btn-chamfer" title="Chanfrar arestas — BRepFilletAPI_MakeChamfer">◈ Chanfro</button>
+          <button id="btn-fillet"          title="Arredondar TODAS as arestas">◉ Fillet Todas</button>
+          <button id="btn-chamfer"         title="Chanfrar TODAS as arestas">◈ Chanfro Todas</button>
+        </div>
+        <div class="ops-btns" style="margin-top:4px">
+          <button id="btn-fillet-edges"   title="Selecionar arestas para arredondar" style="background:rgba(110,231,247,.12);border-color:#6ee7f7">✂ Fillet ↗ Arestas</button>
+          <button id="btn-chamfer-edges"  title="Selecionar arestas para chanfrar"   style="background:rgba(167,139,250,.12);border-color:#a78bfa">✂ Chanfro ↗ Arestas</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Sketching 2D (Fase 4) ────────────────────────────────────── -->
+    <section class="ops-section">
+      <button class="ops-toggle" aria-expanded="true">✏  Sketch 2D</button>
+      <div class="ops-body">
+        <p class="ops-hint">Selecione uma face plana para iniciar o sketch</p>
+        <div class="ops-btns">
+          <button id="btn-start-sketch" title="Iniciar Sketch na face selecionada" style="background:rgba(250,204,21,.15);border-color:#facc15;color:#facc15">✏ Desenhar na Face</button>
         </div>
       </div>
     </section>
@@ -283,6 +298,12 @@
       <button id="btn-export-step"   title="Exportar STEP">⬇ STEP</button>
     </div>
   </aside>
+
+  <!-- Painel flutuante de edição de parâmetros (Fase 3.1 DAG) -->
+  <div id="param-editor" aria-label="Editor de parâmetros" role="dialog"></div>
+
+  <!-- Painel flutuante de Sketch 2D (Fase 4) -->
+  <div id="sketch-panel" class="sk-panel"></div>
 
   </body>
 </html>

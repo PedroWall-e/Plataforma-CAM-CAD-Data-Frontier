@@ -63,9 +63,29 @@ Polimentos de "Frontend" para dar aparência de software pago e focar na viabili
 2. **Manipuladores e UI Flutuante Contextual com `Floating UI`**
    - Substituição de painéis fixos por uma UI moderna ancorada aos modelos 3D usando a biblioteca **Floating UI** (antigo Popper.js).
    - A roda/menu contextual HTML segue perfeitamente a conversão 3D→2D da câmara, mesmo no meio de pan e orbit.
-3. **Exportação 3D Print Ready (Nativa OCCT)**
+6. **Exportação 3D Print Ready (Nativa OCCT)**
    - Fuga de bibliotecas duvidosas de JS e uso direto das classes padrão da indústria que já temos no kernel C++:
      - **STEP**: via `STEPControl_Writer` para compatibilidade profissional.
      - **STL**: via `StlAPI_Writer` (ou extrator `.stl` via Rust crates para evitar bloquear a UI principal).
-4. **Galeria de Peças (Part Library)**
+7. **Galeria de Peças (Part Library)**
    - M3 Bolts, Rolamentos e NEMA mounts prontos a adicionar com um clique.
+
+---
+
+## Fase 6: Manipulação de Câmera e Gizmo
+Substituição da lógica antiga (ViewSphere/ViewCube) que inflige patentes da Autodesk.
+1. **Camera Gizmo (Blender-style)**
+   - Um gizmo 3D interativo minimalista (Tríade X, Y, Z) posicionado no canto superior direito para manipulação direta das vistas (Top, Front, Right, etc.).
+   - Utilização de raycasting avançado para clique nos eixos.
+
+---
+
+## Fase 7: Reestruturação UI/UX (Nexus CAD)
+Implementação de um novo visual com base num layout limpo de estúdio, abandonando os painéis flutuantes caóticos.
+1. **Layout Flexível de Painéis**
+   - Barra Superior (Header & Ferramentas) com elementos essenciais.
+   - Barra Lateral (Sidebar) integrando a Árvore de Projeto (Scene Tree), Nuvem, e Painéis de Operações.
+   - Histórico em formato "Pipeline" na base do canvas (estilo Onshape / Fusion).
+2. **Tema Visual (Zinc & Teal)**
+   - Estilização escura e limpa baseada nas diretrizes do Tailwind CSS (Zinc-900/950 e Teal como accent).
+   - Preservação de todos os menus de ferramentas, configurações de grid e unidades existentes integrados no novo sistema.

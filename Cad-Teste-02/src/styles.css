@@ -514,3 +514,193 @@ body.light-theme .bool-btn { background: rgba(0,100,200,.08); border-color: rgba
 .panel-footer button { flex: 1; font-size: 10px; padding: 4px 6px; min-width: 50px; }
 
 body.light-theme #history-tab { background: rgba(255,255,255,.9); }
+
+/* ═══ Param Editor / Edge Selector — Painel flutuante (Fase 3.1) ═══════════ */
+
+#param-editor {
+  position: fixed;
+  left: 248px; /* logo à direita do ops-panel quando aberto */
+  top: 50%;
+  transform: translateY(-50%) translateX(-20px);
+  opacity: 0;
+  pointer-events: none;
+  display: block !important; /* garante vitória no cascade sobre bloco antigo abaixo */
+  transition: opacity .2s ease, transform .2s ease;
+  z-index: 40;
+  width: 220px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  backdrop-filter: blur(14px);
+  box-shadow: 4px 0 24px rgba(0,0,0,.5);
+  overflow: hidden;
+}
+
+#param-editor.open {
+  opacity: 1;
+  pointer-events: all;
+  display: block !important;
+  transform: translateY(-50%) translateX(0);
+}
+
+.pe-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(90deg, rgba(110,231,247,.07), rgba(167,139,250,.07));
+}
+
+.pe-title {
+  font-size: 11px; font-weight: 700; color: var(--accent);
+  letter-spacing: .04em; flex: 1; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+
+.pe-close { padding: 1px 6px; font-size: 10px; color: var(--muted); flex-shrink: 0; }
+
+.pe-fields { display: flex; flex-direction: column; gap: 7px; padding: 10px 12px; }
+
+.pe-field {
+  display: flex; flex-direction: column; gap: 3px;
+  font-size: 10px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .06em;
+}
+
+.pe-field input[type="number"] {
+  width: 100%; padding: 5px 8px;
+  background: var(--input-bg); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--fg); font-size: 13px; font-weight: 600;
+  outline: none; transition: border-color .15s;
+}
+.pe-field input[type="number"]:focus { border-color: var(--accent); }
+
+.pe-footer {
+  display: flex; gap: 5px; padding: 8px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.pe-apply {
+  flex: 1; font-size: 11px; font-weight: 700; padding: 5px 8px;
+  background: var(--accent); color: #0f1012;
+  border: none; border-radius: 7px; cursor: pointer;
+}
+
+.pe-cancel { font-size: 10px; padding: 5px 8px; color: var(--muted); }
+
+.pe-status {
+  font-size: 10px; color: var(--accent2);
+  padding: 0 12px 8px; min-height: 14px; text-align: center;
+}
+
+.pe-no-params {
+  padding: 16px 12px; font-size: 11px; color: var(--muted); text-align: center;
+}
+
+/* Edge Selector extras */
+.es-hint { font-size: 9px; color: var(--muted); padding: 6px 12px 0; line-height: 1.4; }
+.es-count { font-size: 10px; font-weight: 600; color: var(--accent); padding: 5px 12px; }
+
+
+/* ── Param Editor (Fase 3.1) ─────────────────────────────────────────────── */
+#param-editor {
+  position: fixed; bottom: 70px; left: 50%; transform: translateX(-50%);
+  background: var(--bg2); border: 1px solid var(--accent);
+  border-radius: 10px; padding: 14px; min-width: 260px; max-width: 340px;
+  box-shadow: 0 4px 24px rgba(0,0,0,.5); z-index: 200;
+  backdrop-filter: blur(12px); display: none; flex-direction: column; gap: 10px;
+}
+#param-editor.open { display: flex; }
+.pe-header { display: flex; justify-content: space-between; align-items: center; }
+.pe-title { font-weight: 600; font-size: 13px; color: var(--accent); }
+.pe-close { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; }
+.pe-close:hover { color: #f87171; }
+.pe-fields { display: flex; flex-direction: column; gap: 7px; }
+.pe-field { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 12px; }
+.pe-field input[type=number] {
+  width: 90px; background: var(--input-bg); border: 1px solid var(--border);
+  color: var(--fg); border-radius: 5px; padding: 4px 7px; font-size: 12px; text-align: right;
+}
+.pe-footer { display: flex; gap: 8px; }
+.pe-apply  { flex: 1; background: var(--accent); color: #0f1012; border: none; border-radius: 5px; padding: 6px; font-size: 12px; font-weight: 700; cursor: pointer; }
+.pe-apply:hover { filter: brightness(1.15); }
+.pe-apply:disabled { opacity: .5; cursor: not-allowed; }
+.pe-cancel { flex: 1; background: var(--input-bg); color: var(--fg); border: 1px solid var(--border); border-radius: 5px; padding: 6px; font-size: 12px; cursor: pointer; }
+.pe-status { font-size: 11px; color: var(--muted); min-height: 16px; text-align: center; }
+.pe-no-params { font-size: 12px; color: var(--muted); text-align: center; padding: 8px 0; }
+
+/* ── Edge Selector hint \u0026 count ─────────────────────────────────────────────── */
+.es-hint {
+  font-size: 11px; color: var(--muted); text-align: center;
+  background: rgba(110,231,247,.06); border-radius: 5px; padding: 5px 8px;
+  border: 1px solid var(--border);
+}
+.es-count {
+  font-size: 12px; font-weight: 600; color: var(--accent);
+  text-align: center; padding: 2px 0;
+}
+
+/* ═══ Sketch 2D Panel (Fase 4) ═════════════════════════════════════════════ */
+.sk-panel {
+  position: fixed;
+  left: 248px; top: 50%;
+  transform: translateY(-50%) translateX(-20px);
+  opacity: 0; pointer-events: none;
+  transition: opacity .2s ease, transform .2s ease;
+  z-index: 50; width: 240px;
+  background: var(--bg2); border: 1px solid rgba(250,204,21,.6);
+  border-radius: 12px; backdrop-filter: blur(14px);
+  box-shadow: 4px 0 24px rgba(0,0,0,.6); overflow: hidden;
+}
+.sk-panel.open {
+  opacity: 1; pointer-events: all;
+  transform: translateY(-50%) translateX(0);
+}
+.sk-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+  background: linear-gradient(90deg, rgba(250,204,21,.09), transparent);
+}
+.sk-title { font-size: 12px; font-weight: 700; color: #facc15; }
+.sk-close { background: none; border: none; font-size: 12px; color: var(--muted); cursor: pointer; }
+.sk-close:hover { color: #f87171; }
+.sk-tools { display: flex; gap: 6px; padding: 10px 14px; }
+.sk-tool-btn {
+  flex: 1; font-size: 10px; padding: 6px 0;
+  background: var(--input-bg); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--muted); cursor: pointer;
+}
+.sk-tool-btn:hover { color: var(--fg); border-color: rgba(255,255,255,.2); }
+.sk-tool-btn.active {
+  background: rgba(250,204,21,.15);
+  border-color: #facc15; color: #facc15; font-weight: 600;
+}
+.sk-sep { height: 1px; background: var(--border); margin: 4px 14px; }
+.sk-ops {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 14px; justify-content: space-between;
+}
+.sk-label {
+  font-size: 10px; color: var(--muted); width: 85px;
+  text-transform: uppercase; letter-spacing: .05em;
+}
+.sk-input {
+  width: 50px; background: var(--input-bg); border: 1px solid var(--border);
+  border-radius: 5px; color: var(--fg); font-size: 12px;
+  padding: 4px 6px; text-align: right; outline: none;
+}
+.sk-apply {
+  flex: 1; background: #6ee7f7; color: #0f1012; border: none;
+  font-size: 11px; font-weight: 700; border-radius: 6px;
+  padding: 6px; cursor: pointer;
+}
+.sk-cancel {
+  background: var(--input-bg); border: 1px solid var(--border);
+  color: var(--fg); font-size: 10px; border-radius: 6px;
+  padding: 6px; cursor: pointer;
+}
+.sk-status {
+  font-size: 10px; color: var(--accent);
+  padding: 6px 14px 10px; text-align: center;
+}

@@ -8,10 +8,209 @@ import { initBVH, disposeBVH, computeSnap } from './snap.js';
 import { cadStore, IDENTITY }               from './store.js';
 import { historyAdd, historyMarkDeleted, historyClear, _renderHistory } from './history.js';
 import { sceneAddShape, sceneRemoveShape, renderSceneTree, sceneGetByShapeId, setSceneCallbacks, sceneAddFolder } from './scene-tree.js';
+import { ParamEditor } from './param-editor.js';
+import { EdgeSelector } from './edge-selector.js';
+import { WorkplaneManager } from './workplane.js';
+import { SketchCanvas } from './sketch-canvas.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface MeshData  { vertices: number[]; indices: number[]; }
 interface ShapeMesh { shape_id: number;   mesh: MeshData;    }
+// ─── ViewSphere 3D (substituição do ViewCube — evitar patente Autodesk) ────────
+const VC_SIZE  = 130;  // px — tamanho do ViewSphere
+const VC_TOP   = 14;
+const VC_RIGHT = 14;
+
+// Cena dedicada sem os objetos da cena principal
+const vcScene  = new THREE.Scene();
+const vcCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 20);
+vcCamera.position.set(0, 0, 4);
+// Overlay div (eventos de mouse)
+const vcOverlay = document.getElementById('vc-overlay') as HTMLDivElement;
+
+vcScene.add(new THREE.AmbientLight(0xffffff, 0.7));
+const vcDirL = new THREE.DirectionalLight(0xffffff, 0.6);
+vcDirL.position.set(2, 3, 4); vcScene.add(vcDirL);
+
+// ── Esfera principal ──────────────────────────────────────────────────────────
+const vcSphereGeo = new THREE.SphereGeometry(0.9, 32, 32);
+const vcSphereMat = new THREE.MeshPhongMaterial({
+  color: 0x1a2540, emissive: 0x0a1020,
+  specular: 0x6ee7f7, shininess: 60,
+  transparent: true, opacity: 0.88,
+  wireframe: false,
+});
+const vcSphere = new THREE.Mesh(vcSphereGeo, vcSphereMat);
+vcScene.add(vcSphere);
+
+// Linha de latitude (equador) e meridianos para look visual
+const vcLines = new THREE.LineSegments(
+  new THREE.WireframeGeometry(new THREE.SphereGeometry(0.92, 8, 4)),
+  new THREE.LineBasicMaterial({ color: 0x6ee7f7, transparent: true, opacity: 0.12 })
+);
+vcScene.add(vcLines);
+
+// ── 6 Labels cardinais como Sprites com Canvas ────────────────────────────────
+const VS_POLES = [
+  { label: 'Top',    pos: new THREE.Vector3( 0,  1,  0), cam: new THREE.Vector3(0,  200, 1),  color: '#44cc66' },
+  { label: 'Bottom', pos: new THREE.Vector3( 0, -1,  0), cam: new THREE.Vector3(0, -200, 1),  color: '#44cc66' },
+  { label: 'Front',  pos: new THREE.Vector3( 0,  0,  1), cam: new THREE.Vector3(0,    0, 200), color: '#9966ee' },
+  { label: 'Back',   pos: new THREE.Vector3( 0,  0, -1), cam: new THREE.Vector3(0,    0,-200), color: '#9966ee' },
+  { label: 'Right',  pos: new THREE.Vector3( 1,  0,  0), cam: new THREE.Vector3(200,  0, 0),  color: '#4488cc' },
+  { label: 'Left',   pos: new THREE.Vector3(-1,  0,  0), cam: new THREE.Vector3(-200, 0, 0),  color: '#4488cc' },
+] as const;
+
+function makeVSLabel(text: string, color: string, hovered = false): THREE.SpriteMaterial {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const ctx = c.getContext('2d')!;
+  ctx.clearRect(0, 0, 128, 128);
+  ctx.beginPath();
+  ctx.arc(64, 64, 56, 0, Math.PI * 2);
+  ctx.fillStyle   = hovered ? 'rgba(110,231,247,0.92)' : 'rgba(20,35,65,0.85)';
+  ctx.fill();
+  ctx.strokeStyle = hovered ? '#fff' : color;
+  ctx.lineWidth   = hovered ? 4 : 2.5;
+  ctx.stroke();
+  ctx.fillStyle   = hovered ? '#0f1012' : '#ddeeff';
+  ctx.font = `bold ${text.length > 4 ? 18 : 22}px system-ui,sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(text, 64, 64);
+  return new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false, transparent: true });
+}
+
+const vcLabelSprites = VS_POLES.map(p => {
+  const sp = new THREE.Sprite(makeVSLabel(p.label, p.color));
+  sp.scale.set(0.52, 0.52, 1);
+  sp.position.copy(p.pos).multiplyScalar(1.05);
+  vcScene.add(sp);
+  return sp;
+});
+
+// Esfera invisível de hit-test (raio maior para facilitar clique)
+const vcHitGeo = new THREE.SphereGeometry(1.0, 16, 8);
+const vcHitMat = new THREE.MeshBasicMaterial({ visible: false });
+const vcHitMesh = new THREE.Mesh(vcHitGeo, vcHitMat);
+vcScene.add(vcHitMesh);
+
+// ── Câmeras por vista ─────────────────────────────────────────────────────────
+const VS_FACE_CAMS: THREE.Vector3[] = VS_POLES.map(p => new THREE.Vector3(...p.cam as unknown as [number,number,number]));
+
+let _vcAnimFrame: number | null = null;
+function animateCameraTo(target: THREE.Vector3): void {
+  const start = camera.position.clone();
+  const t0 = performance.now();
+  if (_vcAnimFrame !== null) cancelAnimationFrame(_vcAnimFrame);
+  function step(now: number) {
+    const t = Math.min((now - t0) / 450, 1);
+    const e = 1 - Math.pow(1 - t, 3);
+    camera.position.lerpVectors(start, target, e);
+    camera.lookAt(orbit.target);
+    orbit.update();
+    if (t < 1) _vcAnimFrame = requestAnimationFrame(step);
+    else { orbit.update(); }
+  }
+  _vcAnimFrame = requestAnimationFrame(step);
+}
+
+// ── Hover & clique nos labels ─────────────────────────────────────────────────
+const vcRay = new THREE.Raycaster();
+const vcMouse2 = new THREE.Vector2();
+let _vcHoveredLabel = -1;
+
+function vcSetMouse(e: MouseEvent | PointerEvent): void {
+  const rect = vcOverlay.getBoundingClientRect();
+  vcMouse2.set(
+    ((e.clientX - rect.left) / rect.width)  * 2 - 1,
+    -((e.clientY - rect.top)  / rect.height) * 2 + 1,
+  );
+  vcRay.setFromCamera(vcMouse2, vcCamera);
+}
+
+function vcUpdateHover(e: MouseEvent | PointerEvent): void {
+  vcSetMouse(e);
+  const hits = vcRay.intersectObjects(vcLabelSprites, false);
+  const newIdx = hits.length > 0 ? vcLabelSprites.indexOf(hits[0].object as THREE.Sprite) : -1;
+
+  if (newIdx !== _vcHoveredLabel) {
+    if (_vcHoveredLabel >= 0) {
+      vcLabelSprites[_vcHoveredLabel].material.dispose();
+      vcLabelSprites[_vcHoveredLabel].material = makeVSLabel(VS_POLES[_vcHoveredLabel].label, VS_POLES[_vcHoveredLabel].color, false);
+    }
+    _vcHoveredLabel = newIdx;
+    if (newIdx >= 0) {
+      vcLabelSprites[newIdx].material.dispose();
+      vcLabelSprites[newIdx].material = makeVSLabel(VS_POLES[newIdx].label, VS_POLES[newIdx].color, true);
+    }
+  }
+  vcOverlay.style.cursor = newIdx >= 0 ? 'pointer' : (_vcDragging ? 'grabbing' : 'grab');
+}
+
+vcOverlay.addEventListener('mousemove', vcUpdateHover);
+
+vcOverlay.addEventListener('click', (e: MouseEvent) => {
+  if (_vcDragMoved) return;
+  vcSetMouse(e);
+  const hits = vcRay.intersectObjects(vcLabelSprites, false);
+  if (hits.length > 0) {
+    const idx = vcLabelSprites.indexOf(hits[0].object as THREE.Sprite);
+    if (idx >= 0) animateCameraTo(VS_FACE_CAMS[idx]);
+  }
+});
+
+// ── Drag to orbit ─────────────────────────────────────────────────────────────
+let _vcDragging = false;
+let _vcDragMoved = false;
+let _vcDragLastX = 0;
+let _vcDragLastY = 0;
+
+vcOverlay.addEventListener('pointerdown', (e: PointerEvent) => {
+  _vcDragging = true; _vcDragMoved = false;
+  _vcDragLastX = e.clientX; _vcDragLastY = e.clientY;
+  vcOverlay.setPointerCapture(e.pointerId); e.stopPropagation();
+});
+vcOverlay.addEventListener('pointermove', (e: PointerEvent) => {
+  vcUpdateHover(e);
+  if (!_vcDragging) return;
+  const dx = e.clientX - _vcDragLastX, dy = e.clientY - _vcDragLastY;
+  if (Math.abs(dx) + Math.abs(dy) > 2) _vcDragMoved = true;
+  _vcDragLastX = e.clientX; _vcDragLastY = e.clientY;
+  const sph = new THREE.Spherical().setFromVector3(camera.position.clone().sub(orbit.target));
+  sph.theta -= dx * 0.012;
+  sph.phi    = Math.max(0.05, Math.min(Math.PI - 0.05, sph.phi - dy * 0.012));
+  camera.position.setFromSpherical(sph).add(orbit.target);
+  camera.lookAt(orbit.target); orbit.update();
+});
+vcOverlay.addEventListener('pointerup', () => { _vcDragging = false; });
+
+// Renderiza o ViewSphere usando scissorTest no renderer principal
+function renderViewCube(): void {
+  const W = renderer.domElement.clientWidth;
+  const H = renderer.domElement.clientHeight;
+  const vcLeft   = W - VC_RIGHT - VC_SIZE;
+  const vcBottom = H - VC_TOP   - VC_SIZE;
+
+  renderer.setScissorTest(true);
+  renderer.setScissor(vcLeft, vcBottom, VC_SIZE, VC_SIZE);
+  renderer.setViewport(vcLeft, vcBottom, VC_SIZE, VC_SIZE);
+
+  renderer.setClearColor(_vcBgColor, 1);
+  renderer.clear(true, true, false);
+
+  // Sincroniza rotação da esfera + labels com a câmera invertida
+  vcSphere.quaternion.copy(camera.quaternion).invert();
+  vcLines.quaternion.copy(vcSphere.quaternion);
+  // Sprites são billboard — apenas move posição relativa para orientação correta
+  vcLabelSprites.forEach((sp, i) => {
+    sp.position.copy(VS_POLES[i].pos).applyQuaternion(vcSphere.quaternion).multiplyScalar(1.05);
+  });
+
+  renderer.render(vcScene, vcCamera);
+
+  renderer.setScissorTest(false);
+  renderer.setViewport(0, 0, W, H);
+  renderer.setClearColor(_lightTheme ? 0xe8ecf0 : 0x0f1012, 1);
+}
+
 type PrimType = 'box' | 'cylinder' | 'sphere' | 'cone';
 
 // ─── DOM ──────────────────────────────────────────────────────────────────────
@@ -441,13 +640,8 @@ async function runBoolean(op: 'boolean_union' | 'boolean_cut' | 'boolean_interse
     const result = await invoke<ShapeMesh>(op, { idA, idB });
     // Atualiza a geometria do mesh A com o resultado
     const meshA = shapeMap.get(idA)!;
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(result.mesh.vertices), 3));
-    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(result.mesh.indices), 1));
-    geo.computeVertexNormals();
-    meshA.geometry.dispose();
-    meshA.geometry = geo;
-    initBVH(meshA);
+    // ★ applyWorldSpaceGeo: normaliza coordenadas + gizmo
+    applyWorldSpaceGeo(idA, meshA, result.mesh.vertices, result.mesh.indices);
     // Remove mesh B da cena
     const meshB = shapeMap.get(idB)!;
     scene.remove(meshB);
@@ -707,210 +901,6 @@ nbHold('nb-pan-d',    () => nbPan(0, -3));
 document.getElementById('nb-home')?.addEventListener('click', () => animateCameraTo(new THREE.Vector3(80, 60, 120)));
 
 
-// \u2500\u2500\u2500 ViewCube 3D \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-const VC_SIZE  = 130;  // px — tamanho do ViewCube
-const VC_TOP   = 14;
-const VC_RIGHT = 14;
-
-// Cena dedicada sem os objetos da cena principal
-const vcScene  = new THREE.Scene();
-const vcCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 20);
-vcCamera.position.set(0, 0, 4);
-// Overlay div (eventos de mouse)
-const vcOverlay = document.getElementById('vc-overlay') as HTMLDivElement;
-
-vcScene.add(new THREE.AmbientLight(0xffffff, 0.9));
-const vcDirL = new THREE.DirectionalLight(0xffffff, 0.5);
-vcDirL.position.set(2, 3, 4); vcScene.add(vcDirL);
-
-// BoxGeometry face order: +X=Right, -X=Left, +Y=Top, -Y=Bottom, +Z=Front, -Z=Back
-const VC_FACE_INFO = [
-  { label: 'Right',  bg: '#11284a', border: '#4488cc' },
-  { label: 'Left',   bg: '#11284a', border: '#4488cc' },
-  { label: 'Top',    bg: '#112e1f', border: '#44cc66' },
-  { label: 'Bottom', bg: '#112e1f', border: '#44cc66' },
-  { label: 'Front',  bg: '#1a1135', border: '#9966ee' },
-  { label: 'Back',   bg: '#1a1135', border: '#9966ee' },
-];
-
-function makeVCFaceTex(fi: typeof VC_FACE_INFO[0], hovered = false): THREE.CanvasTexture {
-  const c = document.createElement('canvas'); c.width = c.height = 256;
-  const ctx = c.getContext('2d')!;
-  ctx.fillStyle = hovered ? '#1e3260' : fi.bg;
-  ctx.fillRect(0, 0, 256, 256);
-  ctx.strokeStyle = hovered ? '#6ee7f7' : fi.border;
-  ctx.lineWidth = hovered ? 10 : 5;
-  ctx.strokeRect(4, 4, 248, 248);
-  ctx.fillStyle = hovered ? '#fff' : '#b8cce4';
-  ctx.font = `bold ${fi.label.length > 4 ? 36 : 48}px system-ui,sans-serif`;
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(fi.label, 128, 128);
-  return new THREE.CanvasTexture(c);
-}
-
-const vcFaceMats = VC_FACE_INFO.map(f => new THREE.MeshLambertMaterial({ map: makeVCFaceTex(f) }));
-const vcCube = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 1.6), vcFaceMats);
-vcScene.add(vcCube);
-
-// ── Cube edges (LineSegments) ─────────────────────────────────────────────────
-const edgesGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(1.6, 1.6, 1.6));
-const edgesMat = new THREE.LineBasicMaterial({ color: 0x6ee7f7, transparent: true, opacity: 0.4 });
-vcScene.add(new THREE.LineSegments(edgesGeo, edgesMat));
-
-const VC_CORNERS = [
-  [-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],
-  [-1,-1, 1],[1,-1, 1],[1,1, 1],[-1,1, 1],
-] as const;
-const VC_CORNER_CAMS: THREE.Vector3[] = VC_CORNERS.map(([x,y,z]) =>
-  new THREE.Vector3(x,y,z).normalize().multiplyScalar(200));
-const vcCornerMat  = new THREE.MeshBasicMaterial({ color: 0x6ee7f7, transparent: true, opacity: 0.75 });
-const vcCornerMatH = new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 1.0 });
-const vcCornersGeo = new THREE.SphereGeometry(0.09, 8, 8);
-const vcCornerMeshes: THREE.Mesh[] = VC_CORNERS.map(([x,y,z]) => {
-  const m = new THREE.Mesh(vcCornersGeo, vcCornerMat);
-  m.position.set(x * 0.85, y * 0.85, z * 0.85);
-  vcScene.add(m); return m;
-});
-
-const VC_CAM_DIST = 200;
-const VC_FACE_CAMS: THREE.Vector3[] = [
-  new THREE.Vector3( VC_CAM_DIST, 0, 0), // Right
-  new THREE.Vector3(-VC_CAM_DIST, 0, 0), // Left
-  new THREE.Vector3(0,  VC_CAM_DIST, 1), // Top (offset to avoid gimbal)
-  new THREE.Vector3(0, -VC_CAM_DIST, 1), // Bottom
-  new THREE.Vector3(0, 0,  VC_CAM_DIST), // Front
-  new THREE.Vector3(0, 0, -VC_CAM_DIST), // Back
-];
-
-let _vcAnimFrame: number | null = null;
-function animateCameraTo(target: THREE.Vector3): void {
-  const start = camera.position.clone();
-  const t0 = performance.now();
-  if (_vcAnimFrame !== null) cancelAnimationFrame(_vcAnimFrame);
-  function step(now: number) {
-    const t = Math.min((now - t0) / 450, 1);
-    const e = 1 - Math.pow(1 - t, 3);
-    camera.position.lerpVectors(start, target, e);
-    camera.lookAt(orbit.target);
-    orbit.update();
-    if (t < 1) _vcAnimFrame = requestAnimationFrame(step);
-    else { orbit.update(); }
-  }
-  _vcAnimFrame = requestAnimationFrame(step);
-}
-
-const vcRay = new THREE.Raycaster();
-const vcMouse2 = new THREE.Vector2();
-let _vcHoveredFace = -1;
-let _vcHoveredCorner = -1;
-
-function vcSetMouse(e: MouseEvent | PointerEvent): void {
-  const rect = vcOverlay.getBoundingClientRect();
-  vcMouse2.set(
-    ((e.clientX - rect.left) / rect.width)  * 2 - 1,
-    -((e.clientY - rect.top)  / rect.height) * 2 + 1,
-  );
-  vcRay.setFromCamera(vcMouse2, vcCamera);
-}
-
-function vcUpdateHover(e: MouseEvent | PointerEvent): void {
-  vcSetMouse(e);
-  // Corners first
-  const cornerHits = vcRay.intersectObjects(vcCornerMeshes, false);
-  const newCorner = cornerHits.length > 0 ? vcCornerMeshes.indexOf(cornerHits[0].object as THREE.Mesh) : -1;
-  if (newCorner !== _vcHoveredCorner) {
-    if (_vcHoveredCorner >= 0) vcCornerMeshes[_vcHoveredCorner].material = vcCornerMat;
-    _vcHoveredCorner = newCorner;
-    if (newCorner >= 0) vcCornerMeshes[newCorner].material = vcCornerMatH;
-  }
-  // Face hover (only when no corner hovered)
-  const cubeHits = vcRay.intersectObject(vcCube, false);
-  const newFace  = (newCorner < 0 && cubeHits.length > 0 && cubeHits[0].face)
-    ? Math.floor(cubeHits[0].face.materialIndex) : -1;
-  if (newFace !== _vcHoveredFace) {
-    if (_vcHoveredFace >= 0) {
-      const fi = _vcHoveredFace;
-      vcFaceMats[fi].map?.dispose();
-      vcFaceMats[fi].map = makeVCFaceTex(VC_FACE_INFO[fi], false);
-      vcFaceMats[fi].needsUpdate = true;
-    }
-    _vcHoveredFace = newFace;
-    if (newFace >= 0) {
-      vcFaceMats[newFace].map?.dispose();
-      vcFaceMats[newFace].map = makeVCFaceTex(VC_FACE_INFO[newFace], true);
-      vcFaceMats[newFace].needsUpdate = true;
-    }
-  }
-  vcOverlay.style.cursor = (newCorner >= 0 || newFace >= 0) ? 'pointer' : (_vcDragging ? 'grabbing' : 'grab');
-}
-
-vcOverlay.addEventListener('mousemove', vcUpdateHover);
-
-vcOverlay.addEventListener('click', (e: MouseEvent) => {
-  if (_vcDragMoved) return;
-  vcSetMouse(e);
-  const cH = vcRay.intersectObjects(vcCornerMeshes, false);
-  if (cH.length > 0) { animateCameraTo(VC_CORNER_CAMS[vcCornerMeshes.indexOf(cH[0].object as THREE.Mesh)]); return; }
-  const fH = vcRay.intersectObject(vcCube, false);
-  if (fH.length > 0 && fH[0].face) animateCameraTo(VC_FACE_CAMS[fH[0].face.materialIndex]);
-});
-
-// ── Drag to orbit ────────────────────────────────────────────────────────────
-let _vcDragging = false;
-let _vcDragMoved = false;
-let _vcDragLastX = 0;
-let _vcDragLastY = 0;
-
-vcOverlay.addEventListener('pointerdown', (e: PointerEvent) => {
-  _vcDragging = true; _vcDragMoved = false;
-  _vcDragLastX = e.clientX; _vcDragLastY = e.clientY;
-  vcOverlay.setPointerCapture(e.pointerId); e.stopPropagation();
-});
-vcOverlay.addEventListener('pointermove', (e: PointerEvent) => {
-  vcUpdateHover(e);
-  if (!_vcDragging) return;
-  const dx = e.clientX - _vcDragLastX, dy = e.clientY - _vcDragLastY;
-  if (Math.abs(dx) + Math.abs(dy) > 2) _vcDragMoved = true;
-  _vcDragLastX = e.clientX; _vcDragLastY = e.clientY;
-  const sph = new THREE.Spherical().setFromVector3(camera.position.clone().sub(orbit.target));
-  sph.theta -= dx * 0.012;
-  sph.phi    = Math.max(0.05, Math.min(Math.PI - 0.05, sph.phi - dy * 0.012));
-  camera.position.setFromSpherical(sph).add(orbit.target);
-  camera.lookAt(orbit.target); orbit.update();
-});
-vcOverlay.addEventListener('pointerup', () => { _vcDragging = false; });
-
-// Renderiza o ViewCube usando scissorTest no renderer principal (1 único contexto WebGL)
-function renderViewCube(): void {
-  const W = renderer.domElement.clientWidth;    // CSS px
-  const H = renderer.domElement.clientHeight;   // CSS px
-
-  // Three.js setScissor/setViewport já multiplicam por pixelRatio internamente
-  // (Y conta de baixo para cima no WebGL)
-  const vcLeft   = W - VC_RIGHT - VC_SIZE;
-  const vcBottom = H - VC_TOP   - VC_SIZE;
-
-  renderer.setScissorTest(true);
-  renderer.setScissor(vcLeft, vcBottom, VC_SIZE, VC_SIZE);
-  renderer.setViewport(vcLeft, vcBottom, VC_SIZE, VC_SIZE);
-
-  // Limpa cor + profundidade apenas na região do ViewCube
-  renderer.setClearColor(_vcBgColor, 1);
-  renderer.clear(true, true, false);
-
-  // Sincroniza a orientação do cubo com a câmera invertida
-  vcCube.quaternion.copy(camera.quaternion).invert();
-  vcCornerMeshes.forEach(m => m.quaternion.copy(vcCube.quaternion));
-
-  renderer.render(vcScene, vcCamera);
-
-  // Restaura viewport, scissor e clear color originais
-  renderer.setScissorTest(false);
-  renderer.setViewport(0, 0, W, H);
-  // clear color da cena principal varia com o tema
-  renderer.setClearColor(_lightTheme ? 0xe8ecf0 : 0x0f1012, 1);
-}
-
 // ─── Floor (gravidade) ────────────────────────────────────────────────────────
 btnFloor.addEventListener('click', () => {
   if (selectedShapeId === null) return;
@@ -1016,6 +1006,60 @@ function deselectAll(): void {
   if (_filletRow) _filletRow.style.display = 'none';
 }
 
+
+// ─── applyWorldSpaceGeo ───────────────────────────────────────────────────────
+//
+// Sempre que o OCCT retorna geometria em world-space (fillet, chamfer, boolean,
+// undo, redo, shell), usamos esta função para:
+//   1. Montar a geometria world-space
+//   2. Calcular o centro do bounding box (= posição visual do objeto)
+//   3. Converter para coordenadas locais (subtrai o centro)
+//   4. Definir mesh.position = centro (gizmo aparece sobre o shape)
+//   5. Resetar rotation/scale (OCCT já absorveu esses valores)
+//   6. Registrar a nova matriz no cadStore (histórico)
+//
+function applyWorldSpaceGeo(
+  shapeId: number,
+  mesh: THREE.Mesh,
+  verts: number[] | Float32Array,
+  indices: number[] | Uint32Array,
+): void {
+  const posArr = verts   instanceof Float32Array ? verts   : new Float32Array(verts);
+  const idxArr = indices instanceof Uint32Array  ? indices : new Uint32Array(indices);
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+  geo.setIndex(new THREE.BufferAttribute(idxArr, 1));
+  geo.computeVertexNormals();
+  geo.computeBoundingBox();
+
+  // Centro do bounding box em world-space → novo mesh.position
+  const center = new THREE.Vector3();
+  geo.boundingBox!.getCenter(center);
+
+  // Converte vértices para coordenadas locais (relativo ao centro)
+  geo.translate(-center.x, -center.y, -center.z);
+  geo.computeBoundingBox();
+  geo.computeBoundingSphere();
+
+  mesh.geometry.dispose();
+  mesh.geometry = geo;
+  initBVH(mesh);
+
+  // Reseta transform Three.js: position = centro world, rotation/scale = identidade
+  mesh.position.copy(center);
+  mesh.rotation.set(0, 0, 0);
+  mesh.scale.set(1, 1, 1);
+  mesh.updateMatrix();
+  mesh.updateWorldMatrix(true, false);
+
+  // Salva a nova matriz no histórico (cadStore)
+  cadStore.setMatrix(shapeId, Array.from(mesh.matrixWorld.elements));
+
+  // Reattacha gizmo se este shape está selecionado
+  if (tc && selectedShapeId === shapeId) tc.attach(mesh);
+}
+
 // ─── Fillet / Chamfer handlers ─────────────────────────────────────────────────
 async function runEdgeOp(op: 'fillet_shape' | 'chamfer_shape' | 'shell_shape'): Promise<void> {
   if (selectedShapeId === null) return;
@@ -1026,17 +1070,13 @@ async function runEdgeOp(op: 'fillet_shape' | 'chamfer_shape' | 'shell_shape'): 
   try {
     type ShapeMesh = { shape_id: number; mesh: { vertices: number[]; indices: number[] } };
     const result = await invoke<ShapeMesh>(op, { shapeId: id, radius, dist: radius, thickness: radius });
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(result.mesh.vertices), 3));
-    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(result.mesh.indices), 1));
-    geo.computeVertexNormals();
-    mesh.geometry.dispose();
-    mesh.geometry = geo;
-    initBVH(mesh);
+    // ★ applyWorldSpaceGeo: reseta mesh.position + gizmo automaticamente
+    applyWorldSpaceGeo(id, mesh, result.mesh.vertices, result.mesh.indices);
   } catch (err) {
     console.error(`${op} falhou:`, err);
   }
 }
+
 
 document.getElementById('btn-fillet')?.addEventListener('click',  () => runEdgeOp('fillet_shape'));
 document.getElementById('btn-chamfer')?.addEventListener('click', () => runEdgeOp('chamfer_shape'));
@@ -1051,13 +1091,7 @@ document.getElementById('btn-shell')?.addEventListener('click', async () => {
   try {
     type ShapeMesh = { shape_id: number; mesh: { vertices: number[]; indices: number[] } };
     const result = await invoke<ShapeMesh>('shell_shape', { shapeId: id, thickness: t });
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(result.mesh.vertices), 3));
-    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(result.mesh.indices), 1));
-    geo.computeVertexNormals();
-    mesh.geometry.dispose();
-    mesh.geometry = geo;
-    initBVH(mesh);
+    applyWorldSpaceGeo(id, mesh, result.mesh.vertices, result.mesh.indices); // ★
   } catch (err) { console.error('shell_shape falhou:', err); }
 });
 
@@ -1870,7 +1904,167 @@ document.getElementById('btn-export-step')?.addEventListener('click', async () =
   } catch (err) { showError(`Export STEP: ${err instanceof Error ? err.message : String(err)}`); }
 });
 
-// ─── Render loop (DEVE ficar após todas as const, incluindo ViewCube) ──────────
+// ─── Param Editor — Fase 3.1 DAG ─────────────────────────────────────────────
+const _paramEditor = new ParamEditor('param-editor', (updatedMeshes) => {
+  // Callback: recebe lista de {shape_id, mesh} re-avaliados pelo Rust e atualiza Three.js
+  for (const sm of updatedMeshes) {
+    const mesh = shapeMap.get(sm.shape_id);
+    if (mesh) {
+      updateGeometry(mesh, sm.mesh);
+    } else {
+      // Shape novo (dependente que criou novo ID) — adiciona à cena
+      spawnMesh({ shape_id: sm.shape_id, mesh: sm.mesh });
+    }
+  }
+  renderSceneTree();
+});
+
+// Duplo-clique num item da Árvore de Cena abre o editor de parâmetros
+document.getElementById('scene-tree')?.addEventListener('dblclick', async (e) => {
+  const li = (e.target as HTMLElement).closest('[data-node-id]') as HTMLElement | null;
+  if (!li) return;
+  const nodeEl = li.dataset.nodeId;
+  if (!nodeEl) return;
+
+  // Busca o node da cena para obter o shapeId
+  const sceneNode = document.querySelector(`[data-node-id="${nodeEl}"]`) as HTMLElement | null;
+  const shapeIdStr = sceneNode?.dataset.shapeId;
+  if (!shapeIdStr) return;
+  const shapeId = parseInt(shapeIdStr, 10);
+
+  // Busca o nó no DAG do Rust via get_graph
+  try {
+    const graph = await invoke<{ nodes: { id: number; label: string; shape_id: number | null; op: { type: string } & Record<string, number> }[]; edges: unknown[] }>('get_graph');
+    const dagNode = graph.nodes.find(n => n.shape_id === shapeId);
+    if (!dagNode) { showError('Nó não encontrado no DAG'); return; }
+
+    const opType = dagNode.op.type;
+    const currentParams: Record<string, number> = {};
+    for (const [k, v] of Object.entries(dagNode.op)) {
+      if (k !== 'type' && typeof v === 'number') currentParams[k] = v;
+    }
+
+    _paramEditor.open(dagNode.id, opType, currentParams, dagNode.label);
+  } catch (err) {
+    showError(`get_graph: ${err instanceof Error ? err.message : String(err)}`);
+  }
+});
+
+// ─── Edge Selector — Fillet/Chamfer por Aresta ───────────────────────────────
+
+
+const _edgeSelector = new EdgeSelector(
+  scene, camera,
+  renderer.domElement,
+  'param-editor',
+  ({ shapeMesh }) => {
+    const oldMesh = shapeMap.get(shapeMesh.shape_id);
+    if (oldMesh) {
+      // ★ applyWorldSpaceGeo: normaliza coords world-space + reposiciona gizmo
+      applyWorldSpaceGeo(shapeMesh.shape_id, oldMesh, shapeMesh.mesh.vertices, shapeMesh.mesh.indices);
+    } else {
+      spawnMesh({ shape_id: shapeMesh.shape_id, mesh: shapeMesh.mesh });
+    }
+    renderSceneTree();
+  },
+
+  () => { /* cancelado — sem ação */ }
+);
+
+// \u2500\u2500\u2500 Undo / Redo (Op\u00e7\u00e3o B \u2014 backend C++ stack) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+async function applyUndoRedoMesh(result: { shape_id: number; mesh: { vertices: number[]; indices: number[] } }): Promise<void> {
+  const mesh = shapeMap.get(result.shape_id);
+  if (!mesh) return;
+  // ★ applyWorldSpaceGeo: normaliza coords + gizmo
+  applyWorldSpaceGeo(result.shape_id, mesh, result.mesh.vertices, result.mesh.indices);
+}
+
+document.addEventListener('keydown', async (e: KeyboardEvent) => {
+  // Ctrl+Z → Undo
+  if (e.ctrlKey && !e.shiftKey && e.key === 'z') {
+    if (selectedShapeId === null) return;
+    e.preventDefault();
+    try {
+      const result = await invoke<{ shape_id: number; mesh: { vertices: number[]; indices: number[] } }>(
+        'undo_shape', { shapeId: selectedShapeId }
+      );
+      await applyUndoRedoMesh(result);
+      console.log('[Undo] shape', selectedShapeId);
+    } catch (err) {
+      console.log('[Undo] Nada a desfazer ou falhou:', err);
+    }
+    return;
+  }
+  // Ctrl+Y ou Ctrl+Shift+Z → Redo
+  if (e.ctrlKey && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) {
+    if (selectedShapeId === null) return;
+    e.preventDefault();
+    try {
+      const result = await invoke<{ shape_id: number; mesh: { vertices: number[]; indices: number[] } }>(
+        'redo_shape', { shapeId: selectedShapeId }
+      );
+      await applyUndoRedoMesh(result);
+      console.log('[Redo] shape', selectedShapeId);
+    } catch (err) {
+      console.log('[Redo] Nada a refazer ou falhou:', err);
+    }
+  }
+});
+
+
+
+
+document.getElementById('btn-fillet-edges')?.addEventListener('click', () => {
+  if (selectedShapeId === null) { showError('Selecione um shape primeiro'); return; }
+  if (_edgeSelector.isActive()) return;
+  _edgeSelector.enter(selectedShapeId, 'fillet', shapeMap.get(selectedShapeId));
+});
+
+document.getElementById('btn-chamfer-edges')?.addEventListener('click', () => {
+  if (selectedShapeId === null) { showError('Selecione um shape primeiro'); return; }
+  if (_edgeSelector.isActive()) return;
+  _edgeSelector.enter(selectedShapeId, 'chamfer', shapeMap.get(selectedShapeId));
+});
+
+// ── Fase 4: Workplane + Sketch 2D ──────────────────────────────────────────
+const _workplane = new WorkplaneManager(scene);
+const _sketch = new SketchCanvas(
+  'sk-svg-overlay',
+  'sketch-panel',
+  _workplane,
+  camera,
+  renderer,
+  (result) => {
+    // Callback ao aplicar Extrude / Revolve: insere o novo shape na cena
+    const { shape_id, mesh } = result;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(mesh.vertices), 3));
+    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(mesh.indices), 1)); // ← fix: BufferAttribute
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshStandardMaterial({ color: 0x6ee7f7, metalness: 0.3, roughness: 0.5 });
+    const meshObj = new THREE.Mesh(geo, mat);
+    meshObj.userData['shapeId'] = shape_id;
+    scene.add(meshObj);
+    shapeMap.set(shape_id, meshObj);
+    cadStore.setMatrix(shape_id, IDENTITY.slice());   // ← fix: setMatrix, not set
+    historyAdd('clone', `Sketch Extrude #${shape_id}`, shape_id); // ← fix: valid HistOpType + correct arg order
+    sceneAddShape(shape_id, `Sketch #${shape_id}`, '✏');          // ← fix: icon string, not meshObj
+    console.log('[Sketch] Novo shape:', shape_id);
+  }
+);
+
+document.getElementById('btn-start-sketch')?.addEventListener('click', async () => {
+  // Precisa de um shape selecionado. Se houver face via raycasting, usaremos ela.
+  if (selectedShapeId === null) { showError('Selecione um shape primeiro'); return; }
+  // Usa face 0 como padrão (pode ser refinado para face selecionada depois)
+  const defaultFaceIndex = 0;
+  const planeInfo = await _workplane.activate(selectedShapeId, defaultFaceIndex);
+  if (!planeInfo) { showError('Falha ao detectar o plano da face'); return; }
+  _sketch.show();
+  console.log('[Sketch] Workplane ativo:', planeInfo);
+});
+
 renderer.autoClear = false; // clear manual para compatibilidade com scissor
 (function animate() {
   requestAnimationFrame(animate);
@@ -1882,4 +2076,3 @@ renderer.autoClear = false; // clear manual para compatibilidade com scissor
   updateOriginPlanes();
   renderViewCube();
 })();
-
